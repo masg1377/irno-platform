@@ -1,0 +1,66 @@
+{
+  "name": "irno-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Irno Platform — Hub (academy OS) + Meetino (video meetings) monorepo",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css}\" --ignore-path .prettierignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,css}\" --ignore-path .prettierignore",
+
+    "dev:hub": "turbo run dev --filter=@irno/hub-web --filter=@irno/hub-api",
+    "dev:meetino": "turbo run dev --filter=@irno/meetino-web --filter=@irno/meetino-api",
+    "dev:career": "turbo run dev --filter=@irno/career-web",
+
+    "build:hub": "turbo run build --filter=@irno/hub-web --filter=@irno/hub-api",
+    "build:meetino": "turbo run build --filter=@irno/meetino-web --filter=@irno/meetino-api",
+    "build:career": "turbo run build --filter=@irno/career-web",
+
+    "typecheck:hub": "turbo run typecheck --filter=@irno/hub-web --filter=@irno/hub-api",
+    "typecheck:meetino": "turbo run typecheck --filter=@irno/meetino-web --filter=@irno/meetino-api",
+    "typecheck:career": "turbo run typecheck --filter=@irno/career-web",
+
+    "lint:hub": "turbo run lint --filter=@irno/hub-web --filter=@irno/hub-api",
+    "lint:meetino": "turbo run lint --filter=@irno/meetino-web --filter=@irno/meetino-api",
+    "lint:career": "turbo run lint --filter=@irno/career-web",
+
+    "docker:dev:up": "docker compose -f infra/docker/docker-compose.dev.yml up -d",
+    "docker:dev:down": "docker compose -f infra/docker/docker-compose.dev.yml down",
+    "docker:dev:logs": "docker compose -f infra/docker/docker-compose.dev.yml logs -f",
+    "docker:dev:reset": "docker compose -f infra/docker/docker-compose.dev.yml down -v",
+
+    "docker:up": "docker compose -f infra/docker/docker-compose.dev.yml up -d",
+    "docker:down": "docker compose -f infra/docker/docker-compose.dev.yml down",
+    "docker:logs": "docker compose -f infra/docker/docker-compose.dev.yml logs -f",
+    "docker:reset": "docker compose -f infra/docker/docker-compose.dev.yml down -v",
+
+    "db:migrate:hub": "pnpm --filter @irno/hub-api db:migrate:dev",
+    "db:seed:hub": "pnpm --filter @irno/hub-api db:seed",
+    "db:migrate:meetino": "pnpm --filter @irno/meetino-api prisma:migrate",
+    "db:generate:meetino": "pnpm --filter @irno/meetino-api prisma:generate",
+
+    "db:migrate": "pnpm --filter @irno/hub-api db:migrate",
+    "db:migrate:dev": "pnpm --filter @irno/hub-api db:migrate:dev",
+    "db:seed": "pnpm --filter @irno/hub-api db:seed",
+    "db:studio": "pnpm --filter @irno/hub-api db:studio"
+  },
+  "devDependencies": {
+    "prettier": "3.5.3",
+    "turbo": "2.9.15",
+    "typescript": "6.0.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "multer": ">=2.1.1",
+      "ws": ">=8.21.0"
+    }
+  }
+}

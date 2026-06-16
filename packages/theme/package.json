@@ -1,0 +1,12 @@
+{
+  "name": "@irno/theme",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./tokens": "./src/tokens.css"
+  },
+  "files": ["src"],
+  "devDependencies": {
+    "tailwindcss": "4.3.0"
+  }
+}

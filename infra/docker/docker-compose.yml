@@ -1,0 +1,67 @@
+name: irno-platform
+
+# ── Local development services ────────────────────────────────
+# Start: pnpm docker:up
+# Stop:  pnpm docker:down
+# Reset: pnpm docker:reset  (destroys volumes — data loss!)
+# Logs:  pnpm docker:logs
+#
+# ⚠️  DO NOT use this file in production.
+#     Use infra/docker/docker-compose.prod.example.yml instead.
+#     That file keeps DB/Redis on an internal Docker network with no host port exposure.
+#
+# Platform: Apple Silicon (arm64) native images — no emulation warnings.
+#
+# Ports bound to 127.0.0.1 (loopback only — not accessible from external hosts):
+#   PostgreSQL : 127.0.0.1:5433 → 5432   ← 5433 avoids conflict with any local Postgres
+#   Redis      : 127.0.0.1:6380 → 6379   ← 6380 avoids conflict with any local Redis
+
+services:
+
+  # ── PostgreSQL 16 ───────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    platform: linux/arm64/v8
+    container_name: irno-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: irno_hub
+      POSTGRES_USER: irno
+      POSTGRES_PASSWORD: irno_secret
+    ports:
+      # Bound to loopback only — not reachable from outside this machine.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U irno -d irno_hub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Redis 7 ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    platform: linux/arm64/v8
+    container_name: irno-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      # Bound to loopback only — not reachable from outside this machine.
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+# ── Persistent volumes ────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

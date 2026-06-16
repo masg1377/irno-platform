@@ -1,0 +1,103 @@
+name: irno-platform
+
+# ─────────────────────────────────────────────────────────────────────
+# irno-platform — local development infrastructure
+#
+# Brings up all shared services needed to run Hub + Meetino together.
+# Apps themselves run on the host via `pnpm dev` for fast hot reload.
+#
+# Usage:
+#   pnpm docker:dev:up     — start all services
+#   pnpm docker:dev:down   — stop all services
+#   pnpm docker:dev:logs   — tail logs
+#   pnpm docker:dev:reset  — destroy volumes (data loss!)
+#
+# Ports (host → container):
+#   PostgreSQL : 5433 → 5432   (host 5433 avoids conflict with local postgres)
+#   Redis      : 6380 → 6379   (host 6380 avoids conflict with local redis)
+#   LiveKit    : 7880, 7881, 7882
+#
+# Databases in the single PostgreSQL instance:
+#   irno_hub   — Hub (Irno Academy OS)
+#   meetino_db — Meetino (video meeting platform)
+#
+# Hub API connects to:   postgresql://irno:irno_secret@localhost:5433/irno_hub
+# Meetino API connects:  postgresql://irno:irno_secret@localhost:5433/meetino_db
+# ─────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL 16 — shared, two databases ────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    platform: linux/arm64/v8
+    container_name: irno-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: irno_hub
+      POSTGRES_USER: irno
+      POSTGRES_PASSWORD: irno_secret
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-multiple-dbs.sql:/docker-entrypoint-initdb.d/01-init-multiple-dbs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U irno -d irno_hub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - irno_net
+
+  # ── Redis 7 — shared, all apps ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    platform: linux/arm64/v8
+    container_name: irno-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - irno_net
+
+  # ── LiveKit SFU — for Meetino video meetings ─────────────────────
+  # Pinned to v1.8.4 (signaling protocol 15).
+  # Meetino web client uses livekit-client 2.5.7 (protocol 15) — must match.
+  # When upgrading: bump both server and client together.
+  livekit:
+    image: livekit/livekit-server:v1.8.4
+    container_name: irno-livekit
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit.yaml"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    networks:
+      - irno_net
+
+volumes:
+  postgres_data:
+    external: true
+    name: irno-platform_postgres_data
+  redis_data:
+    external: true
+    name: irno-platform_redis_data
+
+networks:
+  irno_net:
+    name: irno_platform_net
+    driver: bridge

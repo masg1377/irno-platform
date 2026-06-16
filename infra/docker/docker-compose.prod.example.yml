@@ -1,0 +1,167 @@
+name: irno-platform-prod
+
+# ─────────────────────────────────────────────────────────────────────
+# irno-platform — example all-in-one production deployment
+#
+# IMPORTANT: This is a REFERENCE example for a single-VPS deployment.
+# For production with multiple servers, deploy each service separately.
+# See README.monorepo.md — "Deployment" section.
+#
+# Expected deployment targets:
+#   Server 1: Hub web + Hub API          (irno-hub-web, irno-hub-api)
+#   Server 2: Meetino web + Meetino API  (irno-meetino-web, irno-meetino-api)
+#   Server 3: LiveKit + coturn
+#   Server 4: PostgreSQL + Redis
+#
+# Docker build commands:
+#   docker build -f apps/hub-web/Dockerfile     -t irno-hub-web:latest .
+#   docker build -f apps/hub-api/Dockerfile     -t irno-hub-api:latest .
+#   docker build -f apps/meetino-web/Dockerfile -t irno-meetino-web:latest .
+#   docker build -f apps/meetino-api/Dockerfile -t irno-meetino-api:latest .
+#
+# All CHANGE_ME values must be set in your .env or secrets manager.
+# ─────────────────────────────────────────────────────────────────────
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: irno-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: irno_hub
+      POSTGRES_USER: ${POSTGRES_USER:-irno}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-multiple-dbs.sql:/docker-entrypoint-initdb.d/01-init-multiple-dbs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-irno}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - irno_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: irno-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?required}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - irno_net
+
+  livekit:
+    image: livekit/livekit-server:v1.8.4
+    container_name: irno-livekit
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit.yaml"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit/livekit.prod.yaml:/etc/livekit.yaml:ro
+    networks:
+      - irno_net
+
+  hub-api:
+    image: irno-hub-api:latest
+    container_name: irno-hub-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-irno}:${POSTGRES_PASSWORD}@postgres:5432/irno_hub?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_ACCESS_SECRET: ${HUB_JWT_ACCESS_SECRET:?required}
+      JWT_REFRESH_SECRET: ${HUB_JWT_REFRESH_SECRET:?required}
+      API_PORT: 4000
+      API_CORS_ORIGIN: ${HUB_WEB_URL:?required}
+      MEETINO_ENABLED: ${MEETINO_ENABLED:-false}
+      MEETINO_WEB_URL: ${MEETINO_WEB_URL:-}
+      MEETINO_API_URL: ${MEETINO_API_URL:-}
+      MEETINO_CLIENT_SECRET: ${MEETINO_CLIENT_SECRET:-}
+      MEETINO_ALLOWED_REDIRECT_URLS: ${MEETINO_ALLOWED_REDIRECT_URLS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - irno_net
+
+  hub-web:
+    image: irno-hub-web:latest
+    container_name: irno-hub-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HUB_API_URL: http://hub-api:4000
+      HUB_API_INTERNAL_URL: http://hub-api:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - hub-api
+    networks:
+      - irno_net
+
+  meetino-api:
+    image: irno-meetino-api:latest
+    container_name: irno-meetino-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-irno}:${POSTGRES_PASSWORD}@postgres:5432/meetino_db?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_ACCESS_SECRET: ${MEETINO_JWT_ACCESS_SECRET:?required}
+      JWT_REFRESH_SECRET: ${MEETINO_JWT_REFRESH_SECRET:?required}
+      API_PORT: 4001
+      WEB_ORIGIN: ${MEETINO_WEB_URL:?required}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?required}
+      LIVEKIT_URL: ${LIVEKIT_WS_URL:?required}
+      IRNO_HUB_SSO_ENABLED: ${IRNO_HUB_SSO_ENABLED:-false}
+      IRNO_HUB_API_URL: http://hub-api:4000
+      IRNO_HUB_CLIENT_SECRET: ${MEETINO_CLIENT_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - irno_net
+
+  meetino-web:
+    image: irno-meetino-web:latest
+    container_name: irno-meetino-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    ports:
+      - "3001:3000"
+    depends_on:
+      - meetino-api
+    networks:
+      - irno_net
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  irno_net:
+    driver: bridge

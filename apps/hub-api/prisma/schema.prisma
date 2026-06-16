@@ -1,0 +1,1756 @@
+// ──────────────────────────────────────────────────────────────
+// Irno Platform — Prisma Schema
+// Phase 1: Foundation — User, Profile, AppModule
+// Phase 3: CRM — Applicant, ApplicantNote, Student, StudentTimelineEvent, StaffAssignment
+// Phase 4: Academic — Course, CourseGroup, CourseGroupMentor
+// Phase 5: Finance — Enrollment, Payment, PaymentTransaction, Installment
+// Phase 7: Notifications — Notification, NotificationTemplate, NotificationDelivery, NotificationPreference
+// Phase 8: Events — Event, EventRegistration, EventPaymentTransaction, EventEligibilityRule, EventReminder
+// Phase 9: Meetino Integration — MeetinoMeetingReference, MeetinoAttendanceRecord
+//
+// Rules:
+//   • All field names: English (camelCase)
+//   • Timestamps stored as UTC (Prisma default with @db.Timestamptz)
+//   • Money: INTEGER Toman — NOT float
+//   • Soft delete: deletedAt on all business records
+//   • Indexes on all common query fields
+// ──────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Enums ───────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  ACCOUNTANT
+  TEACHER
+  MENTOR
+  STUDENT
+  GUEST
+  LEAD
+  APPLICANT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum AppModuleStatus {
+  ACTIVE
+  COMING_SOON
+  DISABLED
+}
+
+// ── Phase 3 Enums ───────────────────────────────────────────
+
+enum ApplicantStatus {
+  NEW_APPLICANT
+  CONTACTED
+  CONSULTED
+  READY_TO_REGISTER
+  REGISTERED
+  NEEDS_FOLLOW_UP
+  NOT_INTERESTED
+  CANCELLED
+}
+
+enum ApplicantSource {
+  INSTAGRAM
+  REFERRAL
+  WEBSITE
+  PHONE
+  TELEGRAM
+  WHATSAPP
+  IN_PERSON
+  OTHER
+}
+
+enum StudentStatus {
+  ACTIVE
+  PAUSED
+  GRADUATED
+  CANCELLED
+}
+
+enum TimelineEventType {
+  APPLICANT_CREATED
+  APPLICANT_STATUS_CHANGED
+  APPLICANT_NOTE_ADDED
+  APPLICANT_CONVERTED_TO_STUDENT
+  STUDENT_CREATED
+  STUDENT_NOTE_ADDED
+  STUDENT_STATUS_CHANGED
+  // Phase 5: Finance events
+  ENROLLMENT_CREATED
+  ENROLLMENT_STATUS_CHANGED
+  PAYMENT_RECORDED
+  PAYMENT_COMPLETED
+  INSTALLMENT_CREATED
+  INSTALLMENT_OVERDUE
+  INSTALLMENT_PAID
+  // Phase 6: extended events
+  INSTALLMENT_WAIVED
+  SYSTEM_NOTE
+  // Phase 9: Meetino integration
+  MEETINO_SESSION_ATTENDED
+  MEETINO_SESSION_MISSED
+  // Phase 12: Skills & Credits
+  SKILL_AWARDED
+  SKILL_UPDATED
+  CREDIT_AWARDED
+  CREDIT_REVOKED
+  CREDIT_EXPIRED
+  // Phase 13: Certificates
+  CERTIFICATE_ISSUED
+  CERTIFICATE_REVOKED
+}
+
+enum AssignmentTargetType {
+  APPLICANT
+  STUDENT
+}
+
+// ── Phase 4 Enums ───────────────────────────────────────────
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  ALL_LEVELS
+}
+
+enum CourseStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum CourseGroupStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+// ── Phase 8 Enums ───────────────────────────────────────────
+
+enum EventType {
+  WEBINAR
+  CONFERENCE
+  FREE_DISCUSSION
+  WORKSHOP
+  GROUP_CONSULTATION
+  OPEN_SESSION
+  CHALLENGE
+  OTHER
+}
+
+enum EventDeliveryMode {
+  ONLINE
+  IN_PERSON
+  HYBRID
+}
+
+enum EventRegistrationMode {
+  FREE
+  PAID
+  INVITE_ONLY
+  INTERNAL_ONLY
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  LIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum EventRegistrationStatus {
+  PENDING
+  APPROVED
+  WAITLISTED
+  REJECTED
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+}
+
+enum EventRegistrationPaymentStatus {
+  NOT_REQUIRED
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
+}
+
+enum EventEligibilityRuleType {
+  ACTIVE_STUDENT_ONLY
+  SPECIFIC_COURSE
+  SPECIFIC_COURSE_GROUP
+  COMPLETED_COURSE
+  NO_OVERDUE_PAYMENTS
+  STAFF_ONLY
+  PUBLIC
+  MANUAL_APPROVAL_REQUIRED
+  SKILL_OR_CREDIT_PLACEHOLDER
+  // Phase 12: real skill/credit checks
+  REQUIRED_SKILL
+  REQUIRED_CREDIT
+}
+
+enum EventReminderType {
+  REGISTRATION_CONFIRMATION
+  BEFORE_24_HOURS
+  BEFORE_1_HOUR
+  EVENT_STARTED
+  EVENT_CANCELLED
+}
+
+enum EventReminderStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+// ── Phase 7 Enums ───────────────────────────────────────────
+
+enum NotificationType {
+  TRANSACTIONAL
+  MARKETING
+  REMINDER
+  SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  SMS
+  EMAIL
+  TELEGRAM
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+  CANCELLED
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// ── Phase 11.1 Enums ────────────────────────────────────────
+
+enum OtpPurpose {
+  LOGIN
+  REGISTER
+  ACTIVATE_ACCOUNT
+  PASSWORD_RESET
+}
+
+// ── Phase 9 Enums ───────────────────────────────────────────
+
+enum MeetinoMeetingSourceType {
+  COURSE_GROUP
+  EVENT
+  MANUAL
+  FUTURE_SESSION
+}
+
+enum MeetinoMeetingStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+  UNKNOWN
+}
+
+enum MeetinoParticipantType {
+  REGISTERED
+  GUEST
+}
+
+// ── Phase 5 Enums ───────────────────────────────────────────
+
+enum EnrollmentStatus {
+  PENDING
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  REFUNDED
+  FREE
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  CHEQUE
+  OTHER
+}
+
+enum InstallmentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  WAIVED
+}
+
+// ── Models ──────────────────────────────────────────────────
+
+/// Central identity for every human in the system.
+/// Staff, students, applicants, and guests all have a User record.
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String?    @unique @db.VarChar(255)
+  mobile       String     @unique @db.VarChar(20)
+  passwordHash String?    @db.VarChar(255)
+  role         UserRole   @default(STUDENT)
+  status       UserStatus @default(PENDING)
+  activatedAt  DateTime?  @db.Timestamptz
+  createdAt    DateTime   @default(now()) @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @db.Timestamptz
+  deletedAt    DateTime?  @db.Timestamptz
+
+  profile                 Profile?
+  studentProfile          Student?               @relation("StudentUser")
+  createdApplicants       Applicant[]            @relation("ApplicantCreator")
+  assignedApplicants      Applicant[]            @relation("ApplicantAssignee")
+  applicantNotes          ApplicantNote[]        @relation("ApplicantNoteAuthor")
+  timelineEventsActed     StudentTimelineEvent[] @relation("TimelineActor")
+  staffAssignments        StaffAssignment[]      @relation("AssignmentStaff")
+  assignmentsCreated      StaffAssignment[]      @relation("AssignmentAssigner")
+  createdCourses          Course[]               @relation("CourseCreator")
+  teachingGroups          CourseGroup[]          @relation("CourseGroupTeacher")
+  createdGroups           CourseGroup[]          @relation("CourseGroupCreator")
+  mentorGroups            CourseGroupMentor[]
+  createdEnrollments      Enrollment[]           @relation("EnrollmentCreator")
+  recordedTransactions    PaymentTransaction[]   @relation("TransactionRecorder")
+  notifications           Notification[]
+  notificationPreference  NotificationPreference?
+  createdEvents           Event[]               @relation("EventCreator")
+  eventRegistrations      EventRegistration[]   @relation("EventRegistrationUser")
+  recordedEventPayments   EventPaymentTransaction[] @relation("EventPaymentRecorder")
+  meetinoReferences       MeetinoMeetingReference[] @relation("MeetinoReferenceCreator")
+  // Phase 12: Skills & Credits
+  awardedSkills           StudentSkill[]            @relation("SkillAwardedBy")
+  awardedCredits          StudentCredit[]           @relation("CreditAwardedBy")
+  revokedCredits          StudentCredit[]           @relation("CreditRevokedBy")
+  // Phase 13: Certificates
+  issuedCertificates      StudentCertificate[]      @relation("CertificateIssuedBy")
+  revokedCertificates     StudentCertificate[]      @relation("CertificateRevokedBy")
+  // Phase 14: Career Studio
+  careerProfile           CareerProfile?
+  resumeDocuments         ResumeDocument[]
+  resumeExports           ResumeExport[]
+  resumeCheckReports      ResumeCheckReport[]
+  portfolioProjects       PortfolioProject[]
+  jobMatchReports         JobMatchReport[]
+
+  @@index([role])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([mobile])
+  @@map("users")
+}
+
+/// Extended personal and contact information.
+model Profile {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @db.Uuid
+  firstName       String   @db.VarChar(100)
+  lastName        String   @db.VarChar(100)
+  avatarUrl       String?  @db.VarChar(500)
+  city            String?  @db.VarChar(100)
+  bio             String?  @db.Text
+  telegramHandle  String?  @db.VarChar(100)
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+/// Registry of Irno apps available in the app launcher.
+model AppModule {
+  id           String          @id @default(uuid()) @db.Uuid
+  key          String          @unique @db.VarChar(50)
+  nameLocal    String          @db.VarChar(100)
+  description  String?         @db.Text
+  url          String          @db.VarChar(500)
+  iconUrl      String?         @db.VarChar(500)
+  status       AppModuleStatus @default(COMING_SOON)
+  allowedRoles String[]
+  sortOrder    Int             @default(0)
+  createdAt    DateTime        @default(now()) @db.Timestamptz
+  updatedAt    DateTime        @updatedAt @db.Timestamptz
+
+  @@index([status])
+  @@map("app_modules")
+}
+
+// ── Phase 3: CRM ─────────────────────────────────────────────
+
+/// A person interested in registering for a course at Irno.
+model Applicant {
+  id                    String           @id @default(uuid()) @db.Uuid
+  fullName              String           @db.VarChar(200)
+  mobile                String           @db.VarChar(20)
+  email                 String?          @db.VarChar(255)
+  city                  String?          @db.VarChar(100)
+  source                ApplicantSource  @default(OTHER)
+  interestedTopic       String?          @db.VarChar(300)
+  interestedCourseId       String?          @db.Uuid
+  interestedCourseGroupId  String?          @db.Uuid
+  status                   ApplicantStatus  @default(NEW_APPLICANT)
+  consultationNotes     String?          @db.Text
+  followUpDate          DateTime?        @db.Timestamptz
+  assignedToUserId      String?          @db.Uuid
+  convertedToStudentId  String?          @unique @db.Uuid
+  convertedAt           DateTime?        @db.Timestamptz
+  createdById           String           @db.Uuid
+  createdAt             DateTime         @default(now()) @db.Timestamptz
+  updatedAt             DateTime         @updatedAt @db.Timestamptz
+  deletedAt             DateTime?        @db.Timestamptz
+
+  assignedTo            User?            @relation("ApplicantAssignee", fields: [assignedToUserId], references: [id])
+  createdBy             User             @relation("ApplicantCreator", fields: [createdById], references: [id])
+  convertedToStudent    Student?         @relation("ApplicantConversion", fields: [convertedToStudentId], references: [id])
+  interestedCourse      Course?      @relation("ApplicantInterestedCourse", fields: [interestedCourseId], references: [id])
+  interestedCourseGroup CourseGroup? @relation("ApplicantInterestedCourseGroup", fields: [interestedCourseGroupId], references: [id])
+  notes                 ApplicantNote[]
+  eventRegistrations    EventRegistration[] @relation("EventRegistrationApplicant")
+
+  @@index([mobile])
+  @@index([status])
+  @@index([source])
+  @@index([followUpDate])
+  @@index([assignedToUserId])
+  @@index([convertedAt])
+  @@index([deletedAt])
+  @@index([interestedCourseId])
+  @@index([interestedCourseGroupId])
+  @@map("applicants")
+}
+
+/// A note attached to an applicant by a staff member.
+model ApplicantNote {
+  id           String    @id @default(uuid()) @db.Uuid
+  applicantId  String    @db.Uuid
+  authorId     String    @db.Uuid
+  content      String    @db.Text
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+
+  applicant    Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  author       User      @relation("ApplicantNoteAuthor", fields: [authorId], references: [id])
+
+  @@index([applicantId])
+  @@map("applicant_notes")
+}
+
+/// A registered student in Irno Academy.
+model Student {
+  id                 String        @id @default(uuid()) @db.Uuid
+  userId             String        @unique @db.Uuid
+  studentCode        String        @unique @db.VarChar(30)
+  originApplicantId  String?       @db.Uuid
+  status             StudentStatus @default(ACTIVE)
+  internalNotes      String?       @db.Text
+  createdAt          DateTime      @default(now()) @db.Timestamptz
+  updatedAt          DateTime      @updatedAt @db.Timestamptz
+  deletedAt          DateTime?     @db.Timestamptz
+
+  user              User                   @relation("StudentUser", fields: [userId], references: [id])
+  originApplicant   Applicant?             @relation("ApplicantConversion")
+  timelineEvents    StudentTimelineEvent[]
+  enrollments       Enrollment[]
+  eventRegistrations EventRegistration[]   @relation("EventRegistrationStudent")
+  // Phase 12: Skills & Credits
+  studentSkills      StudentSkill[]
+  studentCredits     StudentCredit[]
+  // Phase 13: Certificates
+  certificates       StudentCertificate[]
+
+  @@index([userId])
+  @@index([studentCode])
+  @@index([status])
+  @@index([originApplicantId])
+  @@index([deletedAt])
+  @@map("students")
+}
+
+/// Immutable audit log of everything that has happened to a student.
+model StudentTimelineEvent {
+  id         String            @id @default(uuid()) @db.Uuid
+  studentId  String            @db.Uuid
+  eventType  TimelineEventType
+  actorId    String?           @db.Uuid
+  title      String            @db.VarChar(500)
+  metadata   Json?
+  isManual   Boolean           @default(false)
+  createdAt  DateTime          @default(now()) @db.Timestamptz
+
+  student    Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  actor      User?             @relation("TimelineActor", fields: [actorId], references: [id])
+
+  @@index([studentId, createdAt(sort: Desc)])
+  @@map("student_timeline_events")
+}
+
+/// Tracks which staff member is assigned to an applicant or student.
+model StaffAssignment {
+  id           String               @id @default(uuid()) @db.Uuid
+  staffId      String               @db.Uuid
+  targetType   AssignmentTargetType
+  targetId     String               @db.Uuid
+  assignedAt   DateTime             @default(now()) @db.Timestamptz
+  assignedById String               @db.Uuid
+  isActive     Boolean              @default(true)
+
+  staff        User                 @relation("AssignmentStaff", fields: [staffId], references: [id])
+  assignedBy   User                 @relation("AssignmentAssigner", fields: [assignedById], references: [id])
+
+  @@index([targetType, targetId])
+  @@index([staffId])
+  @@index([isActive])
+  @@map("staff_assignments")
+}
+
+// ── Phase 4: Academic Structure ───────────────────────────────
+
+/// An educational product offered by Irno Academy.
+/// Examples: React course, Next.js course, AI course, Language course.
+model Course {
+  id                   String       @id @default(uuid()) @db.Uuid
+  title                String       @db.VarChar(200)
+  slug                 String       @unique @db.VarChar(100)
+  description          String?      @db.Text
+  category             String       @db.VarChar(100)
+  /** Phase 12.1: structured category from taxonomy. Falls back to legacy category string. */
+  categoryId           String?      @db.Uuid
+  legacyCategory       String?      @db.VarChar(100)
+  level                CourseLevel  @default(ALL_LEVELS)
+  defaultTuitionToman  Int?
+  status               CourseStatus @default(DRAFT)
+  createdById          String       @db.Uuid
+  createdAt            DateTime     @default(now()) @db.Timestamptz
+  updatedAt            DateTime     @updatedAt @db.Timestamptz
+  deletedAt            DateTime?    @db.Timestamptz
+
+  createdBy            User         @relation("CourseCreator", fields: [createdById], references: [id])
+  taxonomyCategory     TaxonomyTerm? @relation("CourseTaxonomyCategory", fields: [categoryId], references: [id])
+  courseGroups         CourseGroup[]
+  interestedApplicants Applicant[]  @relation("ApplicantInterestedCourse")
+  enrollments          Enrollment[]
+
+  @@index([status])
+  @@index([category])
+  @@index([categoryId])
+  @@index([level])
+  @@index([deletedAt])
+  @@map("courses")
+}
+
+/// A specific running class/group for a Course.
+/// Examples: React Group A, Next.js Summer Group, React Native Private Group.
+model CourseGroup {
+  id             String            @id @default(uuid()) @db.Uuid
+  courseId       String            @db.Uuid
+  name           String            @db.VarChar(200)
+  teacherId      String?           @db.Uuid
+  startDate      DateTime?         @db.Timestamptz
+  endDate        DateTime?         @db.Timestamptz
+  scheduleNotes  String?           @db.Text
+  capacity       Int?
+  status         CourseGroupStatus @default(UPCOMING)
+  meetinoRoomId  String?           @db.VarChar(100)
+  createdById    String            @db.Uuid
+  createdAt      DateTime          @default(now()) @db.Timestamptz
+  updatedAt      DateTime          @updatedAt @db.Timestamptz
+  deletedAt      DateTime?         @db.Timestamptz
+
+  course                Course            @relation(fields: [courseId], references: [id])
+  teacher               User?             @relation("CourseGroupTeacher", fields: [teacherId], references: [id])
+  createdBy             User              @relation("CourseGroupCreator", fields: [createdById], references: [id])
+  mentors               CourseGroupMentor[]
+  enrollments           Enrollment[]
+  interestedApplicants  Applicant[]       @relation("ApplicantInterestedCourseGroup")
+
+  @@index([courseId])
+  @@index([teacherId])
+  @@index([status])
+  @@index([startDate])
+  @@index([deletedAt])
+  @@map("course_groups")
+}
+
+/// Join table: mentor assignment to a course group.
+model CourseGroupMentor {
+  courseGroupId  String      @db.Uuid
+  userId         String      @db.Uuid
+  assignedAt     DateTime    @default(now()) @db.Timestamptz
+
+  courseGroup    CourseGroup @relation(fields: [courseGroupId], references: [id], onDelete: Cascade)
+  user           User        @relation(fields: [userId], references: [id])
+
+  @@id([courseGroupId, userId])
+  @@index([userId])
+  @@map("course_group_mentors")
+}
+
+// ── Phase 5: Finance ──────────────────────────────────────────
+
+/// Official registration of a student in a course/group.
+/// Created transactionally together with a Payment record.
+model Enrollment {
+  id                   String           @id @default(uuid()) @db.Uuid
+  studentId            String           @db.Uuid
+  courseId             String           @db.Uuid
+  courseGroupId        String?          @db.Uuid
+  status               EnrollmentStatus @default(PENDING)
+  tuitionAmountToman   Int
+  discountAmountToman  Int              @default(0)
+  finalAmountToman     Int
+  enrollmentDate       DateTime         @db.Timestamptz
+  notes                String?          @db.Text
+  createdById          String           @db.Uuid
+  createdAt            DateTime         @default(now()) @db.Timestamptz
+  updatedAt            DateTime         @updatedAt @db.Timestamptz
+  deletedAt            DateTime?        @db.Timestamptz
+
+  student              Student          @relation(fields: [studentId], references: [id])
+  course               Course           @relation(fields: [courseId], references: [id])
+  courseGroup          CourseGroup?     @relation(fields: [courseGroupId], references: [id])
+  createdBy            User             @relation("EnrollmentCreator", fields: [createdById], references: [id])
+  payment              Payment?
+
+  @@index([studentId])
+  @@index([courseId])
+  @@index([courseGroupId])
+  @@index([status])
+  @@index([enrollmentDate])
+  @@index([deletedAt])
+  @@map("enrollments")
+}
+
+/// Financial record for one enrollment. Created automatically with Enrollment.
+/// Tracks total, paid, and remaining amounts.
+model Payment {
+  id                   String        @id @default(uuid()) @db.Uuid
+  enrollmentId         String        @unique @db.Uuid
+  studentId            String        @db.Uuid
+  totalAmountToman     Int
+  paidAmountToman      Int           @default(0)
+  remainingAmountToman Int
+  status               PaymentStatus @default(UNPAID)
+  notes                String?       @db.Text
+  createdAt            DateTime      @default(now()) @db.Timestamptz
+  updatedAt            DateTime      @updatedAt @db.Timestamptz
+
+  enrollment           Enrollment         @relation(fields: [enrollmentId], references: [id])
+  transactions         PaymentTransaction[]
+  installments         Installment[]
+
+  @@index([studentId])
+  @@index([status])
+  @@map("payments")
+}
+
+/// One manually recorded payment for an enrollment.
+/// Immutable in MVP — no edits or deletes allowed.
+model PaymentTransaction {
+  id            String        @id @default(uuid()) @db.Uuid
+  paymentId     String        @db.Uuid
+  amountToman   Int
+  method        PaymentMethod @default(CASH)
+  paidAt        DateTime      @db.Timestamptz
+  receiptNote   String?       @db.VarChar(500)
+  recordedById  String        @db.Uuid
+  createdAt     DateTime      @default(now()) @db.Timestamptz
+
+  payment       Payment       @relation(fields: [paymentId], references: [id])
+  recordedBy    User          @relation("TransactionRecorder", fields: [recordedById], references: [id])
+
+  @@index([paymentId])
+  @@index([paidAt])
+  @@index([recordedById])
+  @@map("payment_transactions")
+}
+
+// ── Phase 7: Notifications ────────────────────────────────────
+
+/// In-app or external notification sent to a user.
+model Notification {
+  id                 String               @id @default(uuid()) @db.Uuid
+  recipientUserId    String               @db.Uuid
+  title              String
+  body               String
+  type               NotificationType
+  channel            NotificationChannel  @default(IN_APP)
+  status             NotificationStatus   @default(PENDING)
+  priority           NotificationPriority @default(NORMAL)
+  relatedEntityType  String?
+  relatedEntityId    String?
+  metadata           Json?
+  readAt             DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  recipient          User                 @relation(fields: [recipientUserId], references: [id])
+  deliveries         NotificationDelivery[]
+
+  @@index([recipientUserId])
+  @@index([type])
+  @@index([channel])
+  @@index([status])
+  @@index([readAt])
+  @@index([createdAt])
+  @@index([relatedEntityType, relatedEntityId])
+  @@map("notifications")
+}
+
+/// Reusable template for generating notifications by key.
+model NotificationTemplate {
+  id        String              @id @default(uuid()) @db.Uuid
+  key       String              @unique
+  title     String
+  body      String
+  type      NotificationType
+  channel   NotificationChannel
+  isActive  Boolean             @default(true)
+  variables Json?
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  deletedAt DateTime?
+
+  @@index([key])
+  @@index([type])
+  @@index([channel])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("notification_templates")
+}
+
+/// Delivery attempt record for a notification on a specific channel.
+model NotificationDelivery {
+  id                String              @id @default(uuid()) @db.Uuid
+  notificationId    String               @db.Uuid
+  channel           NotificationChannel
+  status            NotificationStatus
+  provider          String?
+  providerMessageId String?
+  errorMessage      String?
+  sentAt            DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  notification      Notification        @relation(fields: [notificationId], references: [id])
+
+  @@index([notificationId])
+  @@index([channel])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notification_deliveries")
+}
+
+/// Per-user notification delivery preferences.
+model NotificationPreference {
+  id                        String   @id @default(uuid()) @db.Uuid
+  userId                    String   @unique @db.Uuid
+  inAppEnabled              Boolean  @default(true)
+  smsTransactionalEnabled   Boolean  @default(true)
+  smsMarketingEnabled       Boolean  @default(false)
+  emailEnabled              Boolean  @default(false)
+  telegramEnabled           Boolean  @default(false)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  user                      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+// ── Phase 8: Events ───────────────────────────────────────────
+
+/// An educational or community event managed by Irno.
+/// Examples: webinars, conferences, workshops, free discussions, open sessions.
+model Event {
+  id                   String                @id @default(uuid()) @db.Uuid
+  title                String                @db.VarChar(300)
+  slug                 String                @unique @db.VarChar(150)
+  description          String?               @db.Text
+  type                 EventType
+  deliveryMode         EventDeliveryMode
+  registrationMode     EventRegistrationMode
+  status               EventStatus           @default(DRAFT)
+  startsAt             DateTime              @db.Timestamptz
+  endsAt               DateTime?             @db.Timestamptz
+  location             String?               @db.VarChar(500)
+  onlineUrl            String?               @db.VarChar(500)
+  meetinoMeetingId     String?               @db.VarChar(100)
+  meetinoJoinUrl       String?               @db.VarChar(500)
+  capacity             Int?
+  priceToman           Int                   @default(0)
+  registrationDeadline DateTime?             @db.Timestamptz
+  categoryId           String?               @db.Uuid
+  createdById          String                @db.Uuid
+  createdAt            DateTime              @default(now()) @db.Timestamptz
+  updatedAt            DateTime              @updatedAt @db.Timestamptz
+  deletedAt            DateTime?             @db.Timestamptz
+
+  createdBy            User                  @relation("EventCreator", fields: [createdById], references: [id])
+  taxonomyCategory     TaxonomyTerm?         @relation("EventTaxonomyCategory", fields: [categoryId], references: [id])
+  registrations        EventRegistration[]
+  eligibilityRules     EventEligibilityRule[]
+  reminders            EventReminder[]
+
+  @@index([type])
+  @@index([deliveryMode])
+  @@index([registrationMode])
+  @@index([status])
+  @@index([categoryId])
+  @@index([startsAt])
+  @@index([deletedAt])
+  @@map("events")
+}
+
+/// A person registered for an event (student, applicant, or external).
+model EventRegistration {
+  id                   String                          @id @default(uuid()) @db.Uuid
+  eventId              String                          @db.Uuid
+  userId               String?                         @db.Uuid
+  studentId            String?                         @db.Uuid
+  applicantId          String?                         @db.Uuid
+  fullName             String                          @db.VarChar(200)
+  mobile               String                          @db.VarChar(20)
+  email                String?                         @db.VarChar(255)
+  status               EventRegistrationStatus         @default(PENDING)
+  paymentStatus        EventRegistrationPaymentStatus  @default(NOT_REQUIRED)
+  amountDueToman       Int                             @default(0)
+  paidAmountToman      Int                             @default(0)
+  remainingAmountToman Int                             @default(0)
+  registeredAt         DateTime                        @default(now()) @db.Timestamptz
+  checkedInAt          DateTime?                       @db.Timestamptz
+  cancelledAt          DateTime?                       @db.Timestamptz
+  notes                String?                         @db.Text
+  createdById          String?                         @db.Uuid
+  createdAt            DateTime                        @default(now()) @db.Timestamptz
+  updatedAt            DateTime                        @updatedAt @db.Timestamptz
+  deletedAt            DateTime?                       @db.Timestamptz
+
+  event                Event                           @relation(fields: [eventId], references: [id])
+  user                 User?                           @relation("EventRegistrationUser", fields: [userId], references: [id])
+  student              Student?                        @relation("EventRegistrationStudent", fields: [studentId], references: [id])
+  applicant            Applicant?                      @relation("EventRegistrationApplicant", fields: [applicantId], references: [id])
+  paymentTransactions  EventPaymentTransaction[]
+
+  @@index([eventId])
+  @@index([userId])
+  @@index([studentId])
+  @@index([applicantId])
+  @@index([mobile])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([registeredAt])
+  @@index([deletedAt])
+  @@map("event_registrations")
+}
+
+/// Manual payment recorded for a paid event registration.
+model EventPaymentTransaction {
+  id                   String            @id @default(uuid()) @db.Uuid
+  eventRegistrationId  String            @db.Uuid
+  amountToman          Int
+  method               PaymentMethod     @default(CASH)
+  paidAt               DateTime          @db.Timestamptz
+  receiptNote          String?           @db.VarChar(500)
+  recordedById         String            @db.Uuid
+  createdAt            DateTime          @default(now()) @db.Timestamptz
+
+  registration         EventRegistration @relation(fields: [eventRegistrationId], references: [id])
+  recordedBy           User              @relation("EventPaymentRecorder", fields: [recordedById], references: [id])
+
+  @@index([eventRegistrationId])
+  @@index([paidAt])
+  @@index([recordedById])
+  @@map("event_payment_transactions")
+}
+
+/// Eligibility rule restricting who can register for an event.
+model EventEligibilityRule {
+  id        String                   @id @default(uuid()) @db.Uuid
+  eventId   String                   @db.Uuid
+  type      EventEligibilityRuleType
+  operator  String?                  @db.VarChar(50)
+  value     Json?
+  isRequired Boolean                 @default(true)
+  createdAt DateTime                 @default(now()) @db.Timestamptz
+  updatedAt DateTime                 @updatedAt @db.Timestamptz
+
+  event     Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([type])
+  @@map("event_eligibility_rules")
+}
+
+/// Scheduled reminder notification for an event.
+model EventReminder {
+  id                     String              @id @default(uuid()) @db.Uuid
+  eventId                String              @db.Uuid
+  type                   EventReminderType
+  scheduledAt            DateTime            @db.Timestamptz
+  channel                NotificationChannel
+  status                 EventReminderStatus @default(PENDING)
+  notificationTemplateId String?             @db.Uuid
+  createdAt              DateTime            @default(now()) @db.Timestamptz
+  updatedAt              DateTime            @updatedAt @db.Timestamptz
+
+  event                  Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@map("event_reminders")
+}
+
+// ── Phase 9: Meetino Integration ─────────────────────────────
+
+/// External Meetino meeting reference stored in Hub.
+/// sourceType + sourceId links to a CourseGroup or Event.
+/// Hub does not store Meetino secrets — only public join URLs and slugs.
+model MeetinoMeetingReference {
+  id               String                    @id @default(uuid()) @db.Uuid
+  sourceType       MeetinoMeetingSourceType
+  sourceId         String                    @db.Uuid
+  meetinoMeetingId String?                   @db.VarChar(200)
+  meetinoSlug      String?                   @db.VarChar(200)
+  title            String                    @db.VarChar(300)
+  joinUrl          String                    @db.VarChar(500)
+  hostUrl          String?                   @db.VarChar(500)
+  status           MeetinoMeetingStatus      @default(UNKNOWN)
+  startsAt         DateTime?                 @db.Timestamptz
+  endsAt           DateTime?                 @db.Timestamptz
+  createdById      String                    @db.Uuid
+  lastSyncedAt     DateTime?                 @db.Timestamptz
+  metadata         Json?
+  createdAt        DateTime                  @default(now()) @db.Timestamptz
+  updatedAt        DateTime                  @updatedAt @db.Timestamptz
+  deletedAt        DateTime?                 @db.Timestamptz
+
+  createdBy        User                      @relation("MeetinoReferenceCreator", fields: [createdById], references: [id])
+  attendanceRecords MeetinoAttendanceRecord[]
+
+  @@index([sourceType, sourceId])
+  @@index([meetinoMeetingId])
+  @@index([meetinoSlug])
+  @@index([status])
+  @@index([startsAt])
+  @@index([deletedAt])
+  @@map("meetino_meeting_references")
+}
+
+/// Attendance record synced (or manually imported) from a Meetino meeting report.
+model MeetinoAttendanceRecord {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  referenceId          String                  @db.Uuid
+  meetinoParticipantId String?                 @db.VarChar(200)
+  userId               String?                 @db.Uuid
+  studentId            String?                 @db.Uuid
+  displayName          String                  @db.VarChar(200)
+  participantType      MeetinoParticipantType  @default(REGISTERED)
+  joinedAt             DateTime?               @db.Timestamptz
+  leftAt               DateTime?               @db.Timestamptz
+  durationSeconds      Int?
+  wasGuest             Boolean                 @default(false)
+  rawData              Json?
+  createdAt            DateTime                @default(now()) @db.Timestamptz
+  updatedAt            DateTime                @updatedAt @db.Timestamptz
+
+  reference            MeetinoMeetingReference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+
+  @@index([referenceId])
+  @@index([studentId])
+  @@index([userId])
+  @@index([joinedAt])
+  @@map("meetino_attendance_records")
+}
+
+// ── Phase 11.1: OTP ──────────────────────────────────────────
+
+/// One-time password record for mobile-based login, registration, and account activation.
+/// Raw code is NEVER stored — only bcrypt hash.
+/// A record is consumed (consumedAt set) after successful verification.
+/// Expired and consumed records should be pruned periodically (future cron).
+model OtpCode {
+  id          String     @id @default(uuid()) @db.Uuid
+  mobile      String     @db.VarChar(20)
+  userId      String?    @db.Uuid
+  codeHash    String     @db.VarChar(255)
+  purpose     OtpPurpose @default(LOGIN)
+  expiresAt   DateTime   @db.Timestamptz
+  consumedAt  DateTime?  @db.Timestamptz
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(5)
+  createdAt   DateTime   @default(now()) @db.Timestamptz
+
+  @@index([mobile, createdAt(sort: Desc)])
+  @@index([mobile, consumedAt, expiresAt])
+  @@map("otp_codes")
+}
+
+/// Scheduled installment for a payment.
+/// Overdue status is computed on-read (dueDate < now and status = PENDING).
+model Installment {
+  id                  String            @id @default(uuid()) @db.Uuid
+  paymentId           String            @db.Uuid
+  studentId           String            @db.Uuid
+  installmentNumber   Int
+  amountToman         Int
+  dueDate             DateTime          @db.Timestamptz
+  paidAt              DateTime?         @db.Timestamptz
+  status              InstallmentStatus @default(PENDING)
+  notes               String?           @db.VarChar(500)
+  createdAt           DateTime          @default(now()) @db.Timestamptz
+  updatedAt           DateTime          @updatedAt @db.Timestamptz
+
+  payment             Payment           @relation(fields: [paymentId], references: [id])
+
+  @@unique([paymentId, installmentNumber])
+  @@index([paymentId])
+  @@index([studentId])
+  @@index([dueDate])
+  @@index([status])
+  @@index([status, dueDate])
+  @@map("installments")
+}
+
+// ── Phase 12: Skills & Credits ────────────────────────────────
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  PROFESSIONAL
+}
+
+enum SkillStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum CreditType {
+  COURSE_COMPLETION
+  TEST_PASSED
+  MENTOR_APPROVAL
+  EVENT_ATTENDANCE
+  INTERVIEW_READY
+  ACCESS_PERMISSION
+  MANUAL
+  OTHER
+}
+
+enum CreditStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum StudentSkillLevel {
+  LEARNING
+  BASIC
+  CONFIDENT
+  ADVANCED
+  MASTERED
+}
+
+enum StudentCreditStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+/// A skill in the Irno skill catalog (e.g. "React Components", "English B1").
+model Skill {
+  id             String      @id @default(uuid()) @db.Uuid
+  title          String      @db.VarChar(255)
+  slug           String      @unique @db.VarChar(255)
+  description    String?     @db.Text
+  category       String?     @db.VarChar(100)
+  categoryId     String?     @db.Uuid
+  legacyCategory String?     @db.VarChar(100)
+  level          SkillLevel
+  status         SkillStatus @default(ACTIVE)
+  createdAt      DateTime    @default(now()) @db.Timestamptz
+  updatedAt      DateTime    @updatedAt @db.Timestamptz
+  deletedAt      DateTime?   @db.Timestamptz
+
+  taxonomyCategory TaxonomyTerm? @relation("SkillTaxonomyCategory", fields: [categoryId], references: [id])
+  studentSkills    StudentSkill[]
+
+  @@index([status])
+  @@index([category])
+  @@index([categoryId])
+  @@index([level])
+  @@index([deletedAt])
+  @@map("skills")
+}
+
+/// A credit in the Irno credit catalog (e.g. "Completed React Course", "Interview Ready").
+model Credit {
+  id               String       @id @default(uuid()) @db.Uuid
+  title            String       @db.VarChar(255)
+  slug             String       @unique @db.VarChar(255)
+  description      String?      @db.Text
+  type             CreditType
+  categoryId       String?      @db.Uuid
+  legacyCategory   String?      @db.VarChar(100)
+  status           CreditStatus @default(ACTIVE)
+  expiresAfterDays Int?
+  createdAt        DateTime     @default(now()) @db.Timestamptz
+  updatedAt        DateTime     @updatedAt @db.Timestamptz
+  deletedAt        DateTime?    @db.Timestamptz
+
+  taxonomyCategory TaxonomyTerm?  @relation("CreditTaxonomyCategory", fields: [categoryId], references: [id])
+  studentCredits   StudentCredit[]
+
+  @@index([type])
+  @@index([status])
+  @@index([categoryId])
+  @@index([deletedAt])
+  @@map("credits")
+}
+
+/// A skill awarded to a student. Unique per student+skill (upsert on re-award).
+model StudentSkill {
+  id           String            @id @default(uuid()) @db.Uuid
+  studentId    String            @db.Uuid
+  skillId      String            @db.Uuid
+  level        StudentSkillLevel
+  sourceType   String?           @db.VarChar(100)
+  sourceId     String?           @db.Uuid
+  awardedById  String            @db.Uuid
+  awardedAt    DateTime          @default(now()) @db.Timestamptz
+  evidenceNote String?           @db.Text
+  createdAt    DateTime          @default(now()) @db.Timestamptz
+  updatedAt    DateTime          @updatedAt @db.Timestamptz
+
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  skill     Skill   @relation(fields: [skillId], references: [id])
+  awardedBy User    @relation("SkillAwardedBy", fields: [awardedById], references: [id])
+
+  @@unique([studentId, skillId])
+  @@index([studentId])
+  @@index([skillId])
+  @@index([level])
+  @@index([awardedAt])
+  @@map("student_skills")
+}
+
+/// A credit awarded to a student. Can expire or be revoked.
+model StudentCredit {
+  id           String              @id @default(uuid()) @db.Uuid
+  studentId    String              @db.Uuid
+  creditId     String              @db.Uuid
+  status       StudentCreditStatus @default(ACTIVE)
+  sourceType   String?             @db.VarChar(100)
+  sourceId     String?             @db.Uuid
+  awardedById  String              @db.Uuid
+  awardedAt    DateTime            @default(now()) @db.Timestamptz
+  expiresAt    DateTime?           @db.Timestamptz
+  revokedAt    DateTime?           @db.Timestamptz
+  revokedById  String?             @db.Uuid
+  evidenceNote String?             @db.Text
+  createdAt    DateTime            @default(now()) @db.Timestamptz
+  updatedAt    DateTime            @updatedAt @db.Timestamptz
+
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  credit    Credit   @relation(fields: [creditId], references: [id])
+  awardedBy User     @relation("CreditAwardedBy", fields: [awardedById], references: [id])
+  revokedBy User?    @relation("CreditRevokedBy", fields: [revokedById], references: [id])
+
+  @@index([studentId])
+  @@index([creditId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([awardedAt])
+  @@map("student_credits")
+}
+
+// ── Phase 12.1: Taxonomy / Master Data ───────────────────────
+
+enum TaxonomyTermType {
+  COURSE_CATEGORY
+  SKILL_CATEGORY
+  CREDIT_CATEGORY
+  EVENT_CATEGORY
+  RESUME_CATEGORY
+  GENERAL
+}
+
+enum TaxonomyTermStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/// Controlled vocabulary for categories and classifications across Irno modules.
+/// Replaces free-text category fields with structured, reportable taxonomy.
+/// title is Persian display name. slug is English/URL-safe.
+model TaxonomyTerm {
+  id          String             @id @default(uuid()) @db.Uuid
+  type        TaxonomyTermType
+  title       String             @db.VarChar(255)
+  slug        String             @db.VarChar(255)
+  description String?            @db.Text
+  parentId    String?            @db.Uuid
+  status      TaxonomyTermStatus @default(ACTIVE)
+  sortOrder   Int                @default(0)
+  color       String?            @db.VarChar(50)
+  icon        String?            @db.VarChar(100)
+  metadata    Json?
+  createdAt   DateTime           @default(now()) @db.Timestamptz
+  updatedAt   DateTime           @updatedAt @db.Timestamptz
+  deletedAt   DateTime?          @db.Timestamptz
+
+  parent      TaxonomyTerm?  @relation("TaxonomyParent", fields: [parentId], references: [id])
+  children    TaxonomyTerm[] @relation("TaxonomyParent")
+
+  // Back-relations from models using this term as category
+  courses     Course[]  @relation("CourseTaxonomyCategory")
+  skills      Skill[]   @relation("SkillTaxonomyCategory")
+  credits     Credit[]  @relation("CreditTaxonomyCategory")
+  events      Event[]   @relation("EventTaxonomyCategory")
+
+  @@unique([type, slug])
+  @@index([type])
+  @@index([status])
+  @@index([parentId])
+  @@index([deletedAt])
+  @@index([type, sortOrder])
+  @@map("taxonomy_terms")
+}
+
+// ── Phase 13: Certificates & Verifiable Credentials ──────────
+
+enum CertificateTemplateType {
+  COURSE_COMPLETION
+  EVENT_ATTENDANCE
+  SKILL_CREDIT
+  MANUAL
+  WORKSHOP
+  OTHER
+}
+
+enum CertificateLanguage {
+  FA
+  EN
+  FA_EN
+}
+
+enum StudentCertificateStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum StudentCertificateSourceType {
+  COURSE
+  COURSE_GROUP
+  ENROLLMENT
+  CREDIT
+  EVENT
+  MANUAL
+}
+
+/// Certificate template — defines the type and layout of a certificate.
+model CertificateTemplate {
+  id           String                  @id @default(uuid()) @db.Uuid
+  title        String                  @db.VarChar(255)
+  slug         String                  @unique @db.VarChar(255)
+  description  String?                 @db.Text
+  type         CertificateTemplateType
+  language     CertificateLanguage     @default(FA)
+  layoutConfig Json?
+  isActive     Boolean                 @default(true)
+  createdAt    DateTime                @default(now()) @db.Timestamptz
+  updatedAt    DateTime                @updatedAt @db.Timestamptz
+  deletedAt    DateTime?               @db.Timestamptz
+
+  certificates StudentCertificate[]
+
+  @@index([type])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("certificate_templates")
+}
+
+/// An official certificate issued to a student by Irno.
+model StudentCertificate {
+  id                  String                        @id @default(uuid()) @db.Uuid
+  studentId           String                        @db.Uuid
+  templateId          String?                       @db.Uuid
+  title               String                        @db.VarChar(500)
+  certificateNumber   String                        @unique @db.VarChar(100)
+  type                CertificateTemplateType
+  status              StudentCertificateStatus      @default(ACTIVE)
+  issuedAt            DateTime                      @default(now()) @db.Timestamptz
+  expiresAt           DateTime?                     @db.Timestamptz
+  sourceType          StudentCertificateSourceType?
+  sourceId            String?                       @db.Uuid
+  issuedById          String                        @db.Uuid
+  verificationCode    String                        @unique @db.VarChar(100)
+  publicVerifyEnabled Boolean                       @default(true)
+  metadata            Json?
+  createdAt           DateTime                      @default(now()) @db.Timestamptz
+  updatedAt           DateTime                      @updatedAt @db.Timestamptz
+  revokedAt           DateTime?                     @db.Timestamptz
+  revokedById         String?                       @db.Uuid
+  revokeReason        String?                       @db.Text
+
+  student    Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  template   CertificateTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  issuedBy   User                 @relation("CertificateIssuedBy", fields: [issuedById], references: [id])
+  revokedBy  User?                @relation("CertificateRevokedBy", fields: [revokedById], references: [id])
+
+  @@index([studentId])
+  @@index([status])
+  @@index([sourceType, sourceId])
+  @@index([issuedAt])
+  @@map("student_certificates")
+}
+
+// ── Phase 14: Career Studio ───────────────────────────────────
+
+enum CareerProfileVisibility {
+  PRIVATE
+  PUBLIC_LINK
+  DISABLED
+}
+
+enum ResumeLanguage {
+  FA
+  EN
+  FA_EN
+}
+
+enum ResumeVisibility {
+  PRIVATE
+  PUBLIC_LINK
+  DISABLED
+}
+
+enum ResumeSectionType {
+  SUMMARY
+  EXPERIENCE
+  EDUCATION
+  PROJECT
+  SKILL
+  CERTIFICATE
+  COURSE
+  CREDIT
+  EVENT
+  LANGUAGE
+  LINK
+  CUSTOM
+  TEXT_BLOCK
+}
+
+enum ResumeTemplateType {
+  ATS_FRIENDLY
+  MODERN
+  MINIMAL
+  CREATIVE
+  ACADEMIC
+  TECHNICAL
+}
+
+enum ResumeExportFormat {
+  PDF
+  HTML
+}
+
+enum ResumeExportStatus {
+  PENDING
+  GENERATED
+  FAILED
+}
+
+enum ResumeCheckSourceType {
+  IRNO_RESUME
+  UPLOADED_FILE
+  TEXT
+  PASTED_TEXT
+}
+
+enum RoadmapNodeType {
+  TOPIC
+  SKILL
+  MILESTONE
+  RESOURCE
+}
+
+enum RoadmapStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PortfolioProjectVisibility {
+  PRIVATE
+  PUBLIC_LINK
+  PUBLIC
+}
+
+/// Career profile — one per user, the public-facing identity for Career Studio.
+model CareerProfile {
+  id             String                   @id @default(uuid()) @db.Uuid
+  userId         String                   @unique @db.Uuid
+  studentId      String?                  @db.Uuid
+  displayName    String                   @db.VarChar(255)
+  headline       String?                  @db.VarChar(500)
+  summary        String?                  @db.Text
+  location       String?                  @db.VarChar(255)
+  phone          String?                  @db.VarChar(50)
+  email          String?                  @db.VarChar(255)
+  website        String?                  @db.VarChar(500)
+  linkedinUrl    String?                  @db.VarChar(500)
+  githubUrl      String?                  @db.VarChar(500)
+  portfolioUrl   String?                  @db.VarChar(500)
+  avatarUrl      String?                  @db.VarChar(500)
+  visibility     CareerProfileVisibility  @default(PRIVATE)
+  publicSlug     String?                  @unique @db.VarChar(255)
+  contactVisibilityConfig Json?
+  publicThemeConfig       Json?
+  seoTitle                String?          @db.VarChar(255)
+  seoDescription          String?          @db.VarChar(500)
+  createdAt      DateTime                 @default(now()) @db.Timestamptz
+  updatedAt      DateTime                 @updatedAt @db.Timestamptz
+
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumes        ResumeDocument[]
+  portfolioProjects PortfolioProject[]
+  jobMatchReports   JobMatchReport[]
+
+  @@index([userId])
+  @@index([publicSlug])
+  @@index([visibility])
+  @@map("career_profiles")
+}
+
+/// A resume document — one user can have many resumes (versions, languages, targets).
+model ResumeDocument {
+  id              String           @id @default(uuid()) @db.Uuid
+  userId          String           @db.Uuid
+  careerProfileId String           @db.Uuid
+  title           String           @db.VarChar(500)
+  targetRole      String?          @db.VarChar(500)
+  language        ResumeLanguage   @default(FA)
+  templateId      String?          @db.Uuid
+  visibility      ResumeVisibility @default(PRIVATE)
+  publicSlug      String?          @unique @db.VarChar(255)
+  styleConfig      Json?
+  settings         Json?
+  includeWatermark  Boolean          @default(true)
+  watermarkConfig   Json?
+  lastExportedAt    DateTime?        @db.Timestamptz
+  allowPdfDownload  Boolean          @default(true)
+  publicThemeConfig Json?
+  createdAt        DateTime         @default(now()) @db.Timestamptz
+  updatedAt       DateTime         @updatedAt @db.Timestamptz
+  deletedAt       DateTime?        @db.Timestamptz
+
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  careerProfile   CareerProfile         @relation(fields: [careerProfileId], references: [id], onDelete: Cascade)
+  template        ResumeTemplate?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  sections        ResumeSection[]
+  exports         ResumeExport[]
+  checkReports    ResumeCheckReport[]
+  jobMatchReports JobMatchReport[]
+
+  @@index([userId])
+  @@index([careerProfileId])
+  @@index([templateId])
+  @@index([visibility])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("resume_documents")
+}
+
+/// A section inside a resume document.
+model ResumeSection {
+  id               String            @id @default(uuid()) @db.Uuid
+  resumeDocumentId String            @db.Uuid
+  type             ResumeSectionType
+  title            String            @db.VarChar(500)
+  content          Json
+  layoutConfig     Json?
+  styleConfig      Json?
+  sortOrder        Int               @default(0)
+  isVisible        Boolean           @default(true)
+  isImported       Boolean           @default(false)
+  sourceType       String?           @db.VarChar(100)
+  sourceId         String?           @db.Uuid
+  createdAt        DateTime          @default(now()) @db.Timestamptz
+  updatedAt        DateTime          @updatedAt @db.Timestamptz
+
+  resumeDocument   ResumeDocument    @relation(fields: [resumeDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([resumeDocumentId])
+  @@index([type])
+  @@index([sortOrder])
+  @@map("resume_sections")
+}
+
+/// Resume template — defines layout, style defaults, and ATS/RTL capabilities.
+model ResumeTemplate {
+  id                 String             @id @default(uuid()) @db.Uuid
+  title              String             @db.VarChar(255)
+  slug               String             @unique @db.VarChar(255)
+  type               ResumeTemplateType
+  language           ResumeLanguage     @default(FA_EN)
+  description        String?            @db.Text
+  previewUrl         String?            @db.VarChar(500)
+  layoutConfig       Json?
+  defaultStyleConfig Json?
+  defaultSections    Json?
+  isPremium          Boolean            @default(false)
+  isActive           Boolean            @default(true)
+  supportsAts        Boolean            @default(false)
+  supportsRtl        Boolean            @default(true)
+  supportsLtr        Boolean            @default(true)
+  sortOrder          Int                @default(0)
+  createdAt          DateTime           @default(now()) @db.Timestamptz
+  updatedAt          DateTime           @updatedAt @db.Timestamptz
+  deletedAt          DateTime?          @db.Timestamptz
+
+  resumes            ResumeDocument[]
+  exports            ResumeExport[]
+
+  @@index([type])
+  @@index([isActive])
+  @@index([isPremium])
+  @@index([supportsAts])
+  @@index([deletedAt])
+  @@map("resume_templates")
+}
+
+/// Export record — tracks PDF/HTML export requests with watermark config.
+model ResumeExport {
+  id               String             @id @default(uuid()) @db.Uuid
+  resumeDocumentId String             @db.Uuid
+  userId           String             @db.Uuid
+  templateId       String?            @db.Uuid
+  format           ResumeExportFormat @default(PDF)
+  status           ResumeExportStatus @default(PENDING)
+  fileUrl          String?            @db.VarChar(1000)
+  htmlSnapshot     String?            @db.Text
+  errorMessage     String?            @db.Text
+  includeWatermark Boolean            @default(true)
+  watermarkConfig  Json?
+  generatedAt      DateTime?          @db.Timestamptz
+  createdAt        DateTime           @default(now()) @db.Timestamptz
+  updatedAt        DateTime           @updatedAt @db.Timestamptz
+
+  resumeDocument   ResumeDocument     @relation(fields: [resumeDocumentId], references: [id], onDelete: Cascade)
+  user             User               @relation(fields: [userId], references: [id])
+  template         ResumeTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([resumeDocumentId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("resume_exports")
+}
+
+/// Resume checker report — scores and findings for a resume.
+/// Supports both Irno-built resumes and externally uploaded/pasted text.
+model ResumeCheckReport {
+  id                      String                @id @default(uuid()) @db.Uuid
+  resumeDocumentId        String?               @db.Uuid
+  userId                  String                @db.Uuid
+  sourceType              ResumeCheckSourceType @default(IRNO_RESUME)
+  /// Original filename if uploaded externally
+  sourceFileName          String?
+  /// Snapshot of text checked (for PASTED_TEXT / UPLOADED_FILE sources)
+  sourceTextSnapshot      String?
+  /// Optional job role the user is targeting
+  targetRole              String?               @db.VarChar(255)
+  /// Snapshot of the job description used for keyword matching
+  jobDescriptionSnapshot  String?
+  overallScore            Int                   @default(0)
+  atsScore                Int                   @default(0)
+  hrScanScore             Int                   @default(0)
+  structureScore          Int                   @default(0)
+  keywordScore            Int                   @default(0)
+  achievementScore        Int                   @default(0)
+  formattingRiskScore     Int                   @default(0)
+  completenessScore       Int                   @default(0)
+  readabilityScore        Int                   @default(0)
+  /// Optional — only set when jobDescriptionSnapshot is provided
+  roleMatchScore          Int?
+  findings                Json
+  /// Actionable suggestions (prioritised list)
+  suggestions             Json?
+  createdAt               DateTime              @default(now()) @db.Timestamptz
+
+  resumeDocument      ResumeDocument?       @relation(fields: [resumeDocumentId], references: [id], onDelete: SetNull)
+  user                User                  @relation(fields: [userId], references: [id])
+
+  @@index([resumeDocumentId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("resume_check_reports")
+}
+
+/// Portfolio project — part of Career Studio public profile.
+/// Phase 21 adds structured case study fields: slug, clientName, summary, problem, solution, impact,
+/// responsibilities, mediaUrls, projectType, seoTitle, seoDescription.
+model PortfolioProject {
+  id               String                      @id @default(uuid()) @db.Uuid
+  userId           String                      @db.Uuid
+  careerProfileId  String                      @db.Uuid
+  studentId        String?                     @db.Uuid
+  title            String                      @db.VarChar(500)
+  slug             String?                     @db.VarChar(200)
+  role             String?                     @db.VarChar(255)
+  clientName       String?                     @db.VarChar(200)
+  description      String?                     @db.Text
+  summary          String?                     @db.Text
+  problem          String?                     @db.Text
+  solution         String?                     @db.Text
+  impact           String?                     @db.Text
+  responsibilities Json?
+  technologies     Json                        @default("[]")
+  links            Json?
+  images           Json?
+  mediaUrls        Json?
+  caseStudy        Json?
+  startDate        DateTime?                   @db.Timestamptz
+  endDate          DateTime?                   @db.Timestamptz
+  projectType      String?                     @db.VarChar(100)
+  visibility       PortfolioProjectVisibility  @default(PRIVATE)
+  sortOrder        Int                         @default(0)
+  isFeatured       Boolean                     @default(false)
+  coverImageUrl    String?                     @db.VarChar(500)
+  demoUrl          String?                     @db.VarChar(500)
+  repoUrl          String?                     @db.VarChar(500)
+  seoTitle         String?                     @db.VarChar(255)
+  seoDescription   String?                     @db.VarChar(500)
+  createdAt        DateTime                    @default(now()) @db.Timestamptz
+  updatedAt        DateTime                    @updatedAt @db.Timestamptz
+  deletedAt        DateTime?                   @db.Timestamptz
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  careerProfile   CareerProfile @relation(fields: [careerProfileId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([careerProfileId])
+  @@index([visibility])
+  @@index([sortOrder])
+  @@index([isFeatured])
+  @@index([deletedAt])
+  @@index([slug])
+  @@map("portfolio_projects")
+}
+
+/// Career roadmap definition — e.g. Frontend Developer Roadmap.
+model Roadmap {
+  id          String        @id @default(uuid()) @db.Uuid
+  title       String        @db.VarChar(500)
+  slug        String        @unique @db.VarChar(255)
+  description String?       @db.Text
+  language    ResumeLanguage @default(FA_EN)
+  status      RoadmapStatus  @default(DRAFT)
+  metadata    Json?
+  createdAt   DateTime      @default(now()) @db.Timestamptz
+  updatedAt   DateTime      @updatedAt @db.Timestamptz
+
+  nodes       RoadmapNode[]
+
+  @@index([status])
+  @@index([language])
+  @@map("roadmaps")
+}
+
+/// A node inside a career roadmap (skill, topic, milestone, resource).
+model RoadmapNode {
+  id          String          @id @default(uuid()) @db.Uuid
+  roadmapId   String          @db.Uuid
+  title       String          @db.VarChar(500)
+  description String?         @db.Text
+  type        RoadmapNodeType @default(TOPIC)
+  sortOrder   Int             @default(0)
+  parentId    String?         @db.Uuid
+  metadata    Json?
+  createdAt   DateTime        @default(now()) @db.Timestamptz
+  updatedAt   DateTime        @updatedAt @db.Timestamptz
+
+  roadmap     Roadmap         @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  parent      RoadmapNode?    @relation("RoadmapNodeParent", fields: [parentId], references: [id])
+  children    RoadmapNode[]   @relation("RoadmapNodeParent")
+
+  @@index([roadmapId])
+  @@index([parentId])
+  @@index([type])
+  @@index([sortOrder])
+  @@map("roadmap_nodes")
+}
+
+/// Job match report — compare a resume against a job description.
+model JobMatchReport {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @db.Uuid
+  careerProfileId    String   @db.Uuid
+  resumeDocumentId   String?  @db.Uuid
+  // Phase 18.3 — source tracking for external resumes
+  sourceType         String   @default("IRNO_RESUME") @db.VarChar(50)
+  sourceFileName     String?  @db.VarChar(500)
+  sourceTextSnapshot String?  @db.Text
+  targetRole         String?  @db.VarChar(200)
+  jobTitle           String?  @db.VarChar(500)
+  jobDescription     String   @db.Text
+  overallScore       Int?
+  keywordScore       Int?
+  skillGap           Json?
+  recommendations    Json?
+  createdAt          DateTime @default(now()) @db.Timestamptz
+
+  user             User            @relation(fields: [userId], references: [id])
+  careerProfile    CareerProfile   @relation(fields: [careerProfileId], references: [id], onDelete: Cascade)
+  resumeDocument   ResumeDocument? @relation(fields: [resumeDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([careerProfileId])
+  @@index([resumeDocumentId])
+  @@index([sourceType])
+  @@index([createdAt])
+  @@map("job_match_reports")
+}

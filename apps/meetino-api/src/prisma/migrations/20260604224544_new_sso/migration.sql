@@ -1,0 +1,3 @@
+-- This migration was superseded by 20260605000000_phase9_1_irno_id which adds
+-- the hub_user_id column first, then creates the index with IF NOT EXISTS.
+-- Intentionally left as no-op to avoid P3018 / 42P07 errors.

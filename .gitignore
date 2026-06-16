@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+dist
+.next
+.turbo
+out
+build
+
+# Environment
+.env
+.env.local
+.env.production
+.env.staging
+
+# Prisma
+prisma/migrations/*.db
+
+# Export storage (PDF files — not committed, must be on persistent volume in production)
+apps/hub-api/storage/exports/*
+!apps/hub-api/storage/exports/.gitkeep
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage
+.nyc_output
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc
+*.pid
+*.seed

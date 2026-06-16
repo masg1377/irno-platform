@@ -1,0 +1,3 @@
+import { notFound } from 'next/navigation'
+// Placeholder — canonical page is in parent directory
+export default function Page() { notFound() }
