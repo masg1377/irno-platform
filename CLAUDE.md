@@ -32,7 +32,7 @@ pnpm db:generate      # prisma generate
 pnpm db:seed          # seed the database
 ```
 
-Prisma 7 reads connection URL from `prisma/prisma.config.ts`, not from `datasource url = env(...)`.
+Prisma 7 reads connection URL from `apps/hub-api/prisma.config.ts`, not from `datasource url = env(...)`.
 
 ---
 
@@ -734,7 +734,7 @@ Phases are sequential. Do not start a phase without explicit instruction.
 * Next.js: 16.2.6 (App Router, Turbopack)
 * NestJS: 11.1.24
 * Prisma: 7.8.0
-* TypeScript: 5.x
+* TypeScript: 6.0.3 (all apps)
 
 ---
 
@@ -762,8 +762,8 @@ irno-platform/
 ### Infrastructure
 
 * PostgreSQL running on port **5433** (not 5432 — avoid conflict with local installs)
-* Redis running on port **6379**
-* Docker Compose file: `infra/docker-compose.yml`
+* Redis running on host port **6380**, mapped to internal 6379 inside Docker
+* Docker Compose file: `infra/docker/docker-compose.yml`
 * Start: `cd infra && docker compose up -d`
 
 ---
@@ -773,7 +773,7 @@ irno-platform/
 * `apps/hub-api/.env` — DATABASE_URL, REDIS_URL, JWT_SECRET, etc.
 * `apps/hub-web/.env.local` — NEXT_PUBLIC_API_URL=http://localhost:3001
 * Prisma 7 does NOT accept `url = env("DATABASE_URL")` in schema datasource block.
-  Connection URL is read from `apps/hub-api/prisma/prisma.config.ts` instead.
+  Connection URL is read from `apps/hub-api/prisma.config.ts` instead.
 
 ---
 
