@@ -144,17 +144,27 @@ docker run --rm --network irno_net \
 # 7. Start all app containers
 docker compose -f infra/docker/docker-compose.prod.yml up -d
 
-# 8. Configure Nginx (to be added in Phase 10.3)
-# For now, configure Nginx manually using infra/nginx/nginx.conf as reference.
-# Replace placeholder domains with your actual domains.
+# 8. Start nginx + certbot (HTTP only at this point — HTTPS blocks need certs first)
+docker compose -f infra/docker/docker-compose.prod.yml up -d nginx certbot
 
-# 9. Issue SSL certificates with Certbot
-certbot --nginx -d hub.irno.ir -d cv.irno.ir -d meet.irno.ir
+# 9. Issue TLS certificates (DNS A records must be live before this step)
+docker compose -f infra/docker/docker-compose.prod.yml run --rm certbot \
+  certonly --webroot -w /var/www/certbot \
+  -d hub.irno.ir -d cv.irno.ir -d meet.irno.ir \
+  --email admin@irno.ir --agree-tos --non-interactive
+
+# Reload nginx to activate the HTTPS server blocks
+docker exec irno-nginx nginx -s reload
 
 # 10. Run health checks (see Section 10)
 ```
 
-**Note:** A production `docker-compose.prod.yml` with all services is to be added in Phase 10.3. The existing `infra/docker/docker-compose.prod.example.yml` is a reference but lacks the career-web service and Nginx/Certbot.
+Nginx site configs are in `infra/nginx/sites/` — one file per domain. To change a domain name, edit the relevant `sites/*.conf` and `nginx.conf` cert paths, then run `docker exec irno-nginx nginx -s reload`.
+
+Automatic certificate renewal runs inside the certbot container every 12 hours. Add this to the host cron to reload nginx after each renewal:
+```
+0 */12 * * * docker exec irno-nginx nginx -s reload
+```
 
 ---
 
