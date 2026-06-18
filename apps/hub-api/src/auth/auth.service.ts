@@ -13,6 +13,7 @@ import * as bcrypt from 'bcryptjs'
 import type { Response } from 'express'
 import { PrismaService } from '../prisma/prisma.service'
 import { RedisService } from '../redis/redis.service'
+import { RedisKey } from '../redis/redis-keys'
 import { OtpService } from './otp.service'
 import { SmsService } from '../notifications/sms/sms.service'
 import type { ApiEnv } from '@irno/validators'
@@ -24,9 +25,6 @@ import type { ChangePasswordDto } from './dto/change-password.dto'
 import type { SetPasswordDto } from './dto/set-password.dto'
 import type { OtpRequestDto } from './dto/otp-request.dto'
 import type { OtpVerifyDto } from './dto/otp-verify.dto'
-
-/** Redis key pattern for refresh token hash storage */
-const rtKey = (userId: string) => `irno:rt:${userId}`
 
 /** Convert e.g. "7d" → seconds for Redis TTL */
 function parseTtlToSeconds(ttl: string): number {
@@ -343,7 +341,7 @@ export class AuthService {
     }
 
     // Verify the hashed RT in Redis
-    const storedHash = await this.redis.get(rtKey(payload.sub))
+    const storedHash = await this.redis.get(RedisKey.refreshToken(payload.sub))
     if (!storedHash) {
       throw new UnauthorizedException('نشست منقضی شده است. لطفاً دوباره وارد شوید.')
     }
@@ -351,7 +349,7 @@ export class AuthService {
     const rtValid = await bcrypt.compare(refreshToken, storedHash)
     if (!rtValid) {
       // Possible token reuse attack — invalidate session entirely
-      await this.redis.del(rtKey(payload.sub))
+      await this.redis.del(RedisKey.refreshToken(payload.sub))
       throw new UnauthorizedException('توکن بازنشانی نامعتبر است')
     }
 
@@ -370,7 +368,7 @@ export class AuthService {
   // ─── Logout ─────────────────────────────────────────────────────────────
 
   async logout(userId: string, res: Response): Promise<void> {
-    await this.redis.del(rtKey(userId))
+    await this.redis.del(RedisKey.refreshToken(userId))
     this.clearCookies(res)
   }
 
@@ -413,7 +411,7 @@ export class AuthService {
     })
 
     // Invalidate all existing sessions after password change
-    await this.redis.del(rtKey(currentUser.id))
+    await this.redis.del(RedisKey.refreshToken(currentUser.id))
     this.clearCookies(res)
   }
 
@@ -455,7 +453,7 @@ export class AuthService {
 
     // Store hashed RT in Redis — we never store raw tokens
     const rtHash = await bcrypt.hash(refreshToken, 10)
-    await this.redis.set(rtKey(userId), rtHash, parseTtlToSeconds(refreshTtl))
+    await this.redis.set(RedisKey.refreshToken(userId), rtHash, parseTtlToSeconds(refreshTtl))
 
     const isProd = this.config.get('NODE_ENV', { infer: true }) === 'production'
 
@@ -532,7 +530,7 @@ export class AuthService {
     })
 
     // Invalidate all refresh sessions after password change
-    await this.redis.del(rtKey(currentUser.id))
+    await this.redis.del(RedisKey.refreshToken(currentUser.id))
     this.clearCookies(res)
 
     return {

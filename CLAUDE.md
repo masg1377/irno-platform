@@ -3898,3 +3898,309 @@ MEETING_MAX_PARTICIPANTS=50
 - meetino-web CSP `unsafe-inline` + `unsafe-eval` required for LiveKit SDK — tighten with nonces in future
 - PDF export files stored on local filesystem — add S3/R2 object storage in Phase 10
 - Screen share multiplicity is managed entirely by the LiveKit SFU layer — Meetino's NestJS API has no hook into "participant started screen sharing." The frontend (`VideoGrid.tsx`) already renders multiple simultaneous sharers. `SecurityLogService.screenShareConflict()` exists as a stub for future enforcement. To enforce single-sharer policy: (a) use LiveKit room webhooks to detect new screen tracks, or (b) add a `SCREEN_SHARE_START` WebSocket event routed through `MeetingGateway` that checks presence state before granting permission. This is tracked as Phase 10 hardening work.
+
+---
+
+#### Phase 22.0 — PostgreSQL + Redis Smart Cache Strategy ✅
+
+**Goal:** Reduce unnecessary database load, fix over-select bugs, centralise all Redis key construction, and add targeted application-level caching. No new product features.
+
+**Migration:** `20260616000000_phase22_0_indexes_redis_cleanup`
+```bash
+cd apps/hub-api
+pnpm db:migrate:dev   # adds 6 compound indexes
+pnpm db:generate      # regenerates Prisma client
+```
+
+---
+
+**A — Redis Key Namespace Policy**
+
+All Redis keys in this project MUST be constructed via `apps/hub-api/src/redis/redis-keys.ts`.
+**Never write inline key strings** (e.g. `` `irno:rt:${id}` ``) in service or controller code.
+
+| Key | Constructor | TTL | Purpose |
+|---|---|---|---|
+| `irno:rt:{userId}` | `RedisKey.refreshToken(userId)` | 7d | Refresh token hash |
+| `irno:otp:cooldown:{mobile}` | `RedisKey.otpCooldown(mobile)` | 60s (configurable) | OTP resend gate |
+| `irno:otp:attempt:{mobile}` | `RedisKey.otpAttempt(mobile)` | 10m | Attempt counter (reserved) |
+| `irno:sso:code:{code}` | `RedisKey.ssoCode(code)` | 60s (configurable) | One-time SSO exchange code |
+| `irno:rate:{scope}:{identifier}` | `RedisKey.rateLimit(scope, id)` | window s | Rate-limit counters |
+| `irno:pdf:lock:{resumeId}` | `RedisKey.pdfLock(resumeId)` | 120s | PDF generation lock (reserved) |
+| `irno:cache:templates` | `RedisKey.cacheTemplates()` | 15min | Resume template list |
+| `irno:cache:taxonomy:{type}` | `RedisKey.cacheTaxonomy(type)` | 5min | Taxonomy lookup per type |
+| `irno:cache:public-profile:{slug}` | `RedisKey.cachePublicProfile(slug)` | 60s | Public career profile response |
+
+**When adding a new Redis key:** add it to `redis-keys.ts` first, document TTL and purpose, then use the constructor everywhere.
+
+---
+
+**B — Redis vs PostgreSQL State Split**
+
+| State type | Store | Reason |
+|---|---|---|
+| Session / refresh tokens | Redis | Ephemeral, revocable, O(1) lookup |
+| OTP codes (hashed) | PostgreSQL | Auditable; one-time-use lifecycle tracked |
+| OTP resend cooldown | Redis | Ephemeral gate; no need for persistence |
+| SSO one-time codes | Redis | Short TTL; delete-on-use |
+| Rate-limit counters | Redis | Ephemeral fixed-window INCR |
+| PDF concurrency semaphore | In-process (future: Redis) | Single-instance for now; BullMQ when scaled |
+| Resume templates list | Redis (cache) | Read-heavy, rarely changes |
+| Taxonomy lookups per type | Redis (cache) | Read-heavy dropdown data |
+| Public profile responses | Redis (cache) | Hot path; invalidated on write |
+| All business records | PostgreSQL | Durable, relational, auditable |
+| Financial data | PostgreSQL only | Never cache payment/installment data |
+| Timeline events | PostgreSQL only | Append-only audit trail |
+| Certificates | PostgreSQL only | Verifiable credentials |
+
+**Rule:** Never cache financial data, payment status, or certificate status in Redis. These must always be read from PostgreSQL to guarantee correctness.
+
+---
+
+**C — Meetino State Split (Redis vs PostgreSQL)**
+
+Meetino uses both Redis (via Socket.IO adapter) and PostgreSQL. Do not mix their roles.
+
+**Redis (live, ephemeral):**
+- Socket.IO room membership (which sockets are in which room) — managed by `@socket.io/redis-adapter`
+- Live participant presence (joined/not joined) — ephemeral, lost on crash
+- WebSocket event rate-limit counters per socket (in-process `Map`, not Redis)
+- Meeting lock state if needed (future)
+
+**PostgreSQL (durable):**
+- Scheduled meetings: title, description, host, start time, settings
+- Meeting lifecycle: created, started, ended, locked
+- Participant history: who joined, when they left, was-kicked
+- Attendance records: `leftAt`, `wasKicked`, `participantType`
+- Chat message history (if persisted)
+- Meeting reports and summaries
+- Hub integration: `meetino_meeting_references`, `meetino_attendance_records`
+
+**Rule:** A Meetino server crash must not lose any business data. All durable state goes to PostgreSQL. Redis is only live presence and pub/sub transport.
+
+---
+
+**D — PDF Export State Split**
+
+| State | Location | Reason |
+|---|---|---|
+| Export metadata (status, format, fileUrl, error) | PostgreSQL `resume_exports` | Durable, auditable |
+| PDF binary file | Local filesystem `storage/exports/{userId}/{exportId}.pdf` | Large binary, not suited for DB |
+| In-process concurrency semaphore | In-process `PdfSemaphore` | Single instance; BullMQ for scale |
+| Queue position / job status | BullMQ + Redis (future) | Async worker decoupling |
+| Active Playwright browser instance | In-process singleton | Playwright browser is not serialisable |
+
+**Production guidance:**
+- Mount `storage/exports` as a persistent Docker volume or NFS/EFS share
+- Never store PDF binary in PostgreSQL (TEXT/BYTEA field would bloat the DB)
+- When horizontally scaling: migrate to object storage (S3/R2) + BullMQ worker process
+- PDF export files are served by hub-api directly (`GET /exports/:id/download`) — add Nginx X-Accel-Redirect for large files in Phase 10
+
+---
+
+**E — Application Cache Policy**
+
+All caches in hub-api use the **cache-aside (lazy-load)** pattern:
+
+```
+1. Try Redis GET(key)
+2. On HIT → return parsed JSON
+3. On MISS or Redis error → query PostgreSQL
+4. Store result in Redis SET(key, value, ttl)
+5. Return result
+```
+
+All Redis calls are wrapped in try/catch. Redis errors never propagate to the caller — the cache is **fail-open** (fall through to DB). This means the app works correctly even if Redis is down; performance degrades gracefully.
+
+**Cache invalidation rules:**
+
+| Cache | Invalidated when |
+|---|---|
+| `cacheTemplates()` | Any resume template is created, updated, or deleted |
+| `cacheTaxonomy(type)` | Any taxonomy term of that type is created, updated, or archived |
+| `cachePublicProfile(slug)` | Career profile settings updated (slug, visibility, contact config, SEO); any section updated/deleted/reordered; public settings changed |
+
+**What is NOT cached:**
+- Paginated admin list endpoints (too many filter combinations)
+- Financial data (payment status, installments, revenue)
+- Student CRM data (follow-up dates, notes)
+- Notifications and notification preferences
+- Any data that requires real-time accuracy
+
+---
+
+**F — PostgreSQL Compound Indexes Added (Phase 22.0)**
+
+Migration: `20260616000000_phase22_0_indexes_redis_cleanup`
+
+| Index | Table | Columns | Use case |
+|---|---|---|---|
+| `resume_sections_resumeDocumentId_sortOrder_idx` | `resume_sections` | `(resumeDocumentId, sortOrder)` | Load all sections for a resume in sorted order — single index scan |
+| `resume_exports_resumeDocumentId_status_idx` | `resume_exports` | `(resumeDocumentId, status)` | Filter exports by resume + status |
+| `resume_exports_userId_createdAt_idx` | `resume_exports` | `(userId, createdAt DESC)` | List all user exports ordered by date |
+| `resume_check_reports_userId_createdAt_idx` | `resume_check_reports` | `(userId, createdAt DESC)` | List user check reports ordered by date |
+| `portfolio_projects_careerProfileId_visibility_deletedAt_idx` | `portfolio_projects` | `(careerProfileId, visibility, deletedAt)` | Public profile portfolio: filter by profile + visibility + not-deleted |
+| `job_match_reports_careerProfileId_createdAt_idx` | `job_match_reports` | `(careerProfileId, createdAt DESC)` | List user job match reports ordered by date |
+
+All existing indexes (from prior migrations) remain. The schema also defines these model-level indexes added in Phase 22.0:
+```prisma
+// In schema.prisma
+@@index([resumeDocumentId, sortOrder])         // ResumeSection
+@@index([resumeDocumentId, status])            // ResumeExport
+@@index([userId, createdAt])                   // ResumeExport, ResumeCheckReport
+@@index([careerProfileId, visibility, deletedAt]) // PortfolioProject
+@@index([careerProfileId, createdAt])          // JobMatchReport
+```
+
+---
+
+**G — Over-Select Fixes (Phase 22.0)**
+
+The following list endpoints previously loaded large text/JSON fields unnecessarily. Fixed with explicit Prisma `select`:
+
+| Endpoint | Field removed from list select | Size |
+|---|---|---|
+| `listExports()` in `career-export.service.ts` | `htmlSnapshot` | Hundreds of KB per export |
+| `listReports()` in `resume-checker.service.ts` | `sourceTextSnapshot`, `findings` | Up to 5000 chars + large JSON |
+| `listJobMatchReports()` in `career.service.ts` | `jobDescriptionSnapshot` | Up to 5000 chars |
+
+**Rule:** List endpoints must never select large TEXT or JSONB fields unless explicitly needed. Always add a Prisma `select` clause to list queries.
+
+---
+
+**H — OTP Cooldown Migration (DB → Redis)**
+
+Before Phase 22.0, OTP resend cooldown was enforced by querying `otp_codes` table:
+```sql
+-- Old: PostgreSQL query on every OTP request
+SELECT * FROM otp_codes WHERE mobile = $1 ORDER BY createdAt DESC LIMIT 1
+```
+
+After Phase 22.0, cooldown uses a Redis sentinel key:
+```
+irno:otp:cooldown:{normalizedMobile}   TTL = OTP_RESEND_COOLDOWN_SECONDS
+```
+
+- `EXISTS` check is O(1) vs PostgreSQL index scan
+- Key is deleted on successful OTP verification (user can request a new code immediately)
+- Fail-open: if Redis is unreachable, cooldown is skipped (OTP delivery is not blocked)
+- Mobile numbers are normalised (`09xxxxxxxxx` format) before use as key component
+
+---
+
+**I — PostgreSQL Tuning Recommendations**
+
+These are **recommended** `postgresql.conf` values for different RAM configurations. Apply in Phase 10 deployment.
+
+**8 GB RAM (small VPS):**
+```
+shared_buffers = 2GB
+effective_cache_size = 6GB
+work_mem = 16MB
+maintenance_work_mem = 256MB
+wal_buffers = 16MB
+checkpoint_completion_target = 0.9
+max_wal_size = 1GB
+random_page_cost = 1.1          # if using SSD
+effective_io_concurrency = 200  # if using SSD
+```
+
+**16 GB RAM (production VPS):**
+```
+shared_buffers = 4GB
+effective_cache_size = 12GB
+work_mem = 32MB
+maintenance_work_mem = 512MB
+wal_buffers = 16MB
+checkpoint_completion_target = 0.9
+max_wal_size = 2GB
+random_page_cost = 1.1
+effective_io_concurrency = 200
+```
+
+**32 GB RAM (scaled production):**
+```
+shared_buffers = 8GB
+effective_cache_size = 24GB
+work_mem = 64MB
+maintenance_work_mem = 1GB
+wal_buffers = 64MB
+checkpoint_completion_target = 0.9
+max_wal_size = 4GB
+random_page_cost = 1.1
+effective_io_concurrency = 300
+```
+
+**Additional recommended settings (all environments):**
+```
+log_min_duration_statement = 200   # Log queries slower than 200ms
+log_checkpoints = on
+log_connections = on               # Remove in very high-traffic production
+autovacuum = on                    # Never disable
+autovacuum_vacuum_scale_factor = 0.05
+autovacuum_analyze_scale_factor = 0.02
+```
+
+Run `ANALYZE;` after applying migrations and seeding. Run `VACUUM ANALYZE;` after bulk imports.
+
+---
+
+**J — Observability Checklist**
+
+Apply in Phase 10. All items are pre-requisites for calling Irno production-ready.
+
+**Metrics to export (Prometheus + Grafana recommended):**
+
+| Metric | Source | Alert threshold |
+|---|---|---|
+| `hub_api_request_duration_ms` | NestJS middleware | p99 > 500ms |
+| `hub_api_rate_limit_hits_total` | `RateLimitGuard` | > 100/min per endpoint |
+| `hub_api_redis_errors_total` | `RedisService` catch blocks | > 5/min |
+| `hub_api_pdf_queue_full_total` | `PdfSemaphore` | > 10/min |
+| `hub_api_pdf_duration_ms` | `CareerPdfService` | p95 > 20s |
+| `hub_api_cache_hit_ratio` | Cache-aside counters | < 0.5 for hot paths |
+| `hub_api_db_query_duration_ms` | Prisma middleware | p99 > 300ms |
+| PostgreSQL `pg_stat_user_tables.seq_scan` | Postgres exporter | Trend rising = missing index |
+| PostgreSQL `pg_stat_bgwriter.checkpoints_timed` | Postgres exporter | High = increase `max_wal_size` |
+| Redis `used_memory_rss` | Redis exporter | > 80% of `maxmemory` |
+| Redis `keyspace_misses` vs `keyspace_hits` | Redis exporter | Miss ratio > 50% = cache ineffective |
+
+**Logs to collect (Loki or similar):**
+- All `SecurityLogService` events (structured JSON) — AUTH_FAILURE, RATE_LIMIT, SSO_ABUSE
+- Slow query log from PostgreSQL (`log_min_duration_statement = 200`)
+- NestJS error-level logs — unhandled exceptions, 500 responses
+- PDF generation errors and timeouts
+- Redis connection errors
+
+**Health endpoints already implemented:**
+- `GET /api/v1/health` — hub-api liveness + DB + Redis ping
+- `GET /health` — Meetino API
+
+**Alerts to configure:**
+- Error rate > 1% of requests over 5 minutes
+- P99 latency > 1s over 5 minutes
+- Redis down > 30 seconds
+- PostgreSQL replication lag > 10s (if using replica)
+- Disk usage > 80% (for PDF export storage volume)
+- OTP delivery failure rate > 20% over 10 minutes
+
+**Tracing (optional, Phase 10+):**
+- Add OpenTelemetry SDK to hub-api (`@opentelemetry/sdk-node`)
+- Instrument NestJS HTTP, Prisma, and Redis spans
+- Export to Jaeger or Tempo
+- Correlate slow frontend requests to DB query chains
+
+---
+
+**Build/typecheck (Phase 22.0):**
+- ✅ hub-api TypeScript: zero errors
+- ✅ career-web TypeScript: zero errors
+
+**New env vars (Phase 22.0):** None — all Redis cache behaviour uses existing `REDIS_URL`.
+
+**Known limitations (Phase 22.0):**
+- Taxonomy cache invalidated per-type — if a term changes, the entire type's lookup cache is cleared (acceptable; lookup results are small and rebuild is fast)
+- Public profile cache TTL is 60s — a profile edit takes up to 60s to propagate to unauthenticated viewers; explicit invalidation on write reduces this to near-zero for authenticated writes
+- Template cache TTL is 15min — admin template changes take up to 15min to appear to users; acceptable since templates change rarely
+- In-process rate-limit counters and PDF semaphore are not shared across hub-api instances — horizontal scaling requires BullMQ + Redis distributed coordination (Phase 10)
+- No cache warm-up on startup — first request after deploy hits the DB; Redis cache fills naturally on first access

@@ -1,5 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { RedisService } from '../redis/redis.service'
+import { RedisKey } from '../redis/redis-keys'
 import { UserRole, TaxonomyTermStatus } from '@irno/types'
 
 interface LookupOption {
@@ -11,7 +13,10 @@ interface LookupOption {
 
 @Controller('lookup')
 export class LookupController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   private get db() {
     return this.prisma as any
@@ -26,6 +31,17 @@ export class LookupController {
     @Query('type') type?: string,
     @Query('search') search?: string,
   ): Promise<LookupOption[]> {
+    // Cache taxonomy lookups per type (no search) for 5 minutes.
+    // Search queries are never cached — they are ad-hoc and rarely repeated.
+    const cacheKey = type && !search ? RedisKey.cacheTaxonomy(type) : null
+
+    if (cacheKey) {
+      try {
+        const cached = await this.redis.get(cacheKey)
+        if (cached) return JSON.parse(cached) as LookupOption[]
+      } catch { /* Redis down — fall through */ }
+    }
+
     const where: Record<string, unknown> = {
       deletedAt: null,
       status: TaxonomyTermStatus.ACTIVE,
@@ -42,12 +58,18 @@ export class LookupController {
       select: { id: true, title: true, type: true, status: true },
     })
 
-    return rows.map((r: any) => ({
+    const result: LookupOption[] = rows.map((r: any) => ({
       id: r.id,
       label: r.title,
       subtitle: r.type,
       status: r.status,
     }))
+
+    if (cacheKey) {
+      try { await this.redis.set(cacheKey, JSON.stringify(result), 5 * 60) } catch { /* non-fatal */ }
+    }
+
+    return result
   }
 
   /**

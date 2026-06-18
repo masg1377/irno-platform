@@ -19,3 +19,7 @@ ALTER TABLE "portfolio_projects"
 CREATE UNIQUE INDEX IF NOT EXISTS "portfolio_projects_careerProfileId_slug_key"
   ON "portfolio_projects"("careerProfileId", "slug")
   WHERE "slug" IS NOT NULL AND "deletedAt" IS NULL;
+
+-- Plain slug index (moved here from 20260611234346_phase211 — timestamp ordering fix)
+CREATE INDEX IF NOT EXISTS "portfolio_projects_slug_idx"
+  ON "portfolio_projects"("slug");

@@ -289,6 +289,17 @@ export class ResumeCheckerService {
         orderBy: { createdAt: 'desc' },
         skip,
         take: pageSize,
+        // Exclude sourceTextSnapshot — up to 5000 chars; not needed for list view
+        select: {
+          id: true, userId: true, resumeDocumentId: true,
+          sourceType: true, sourceFileName: true, targetRole: true,
+          overallScore: true, completenessScore: true, atsScore: true,
+          hrScanScore: true, structureScore: true, achievementScore: true,
+          keywordScore: true, formattingRiskScore: true, readabilityScore: true,
+          roleMatchScore: true,
+          createdAt: true, updatedAt: true,
+          // NOTE: sourceTextSnapshot and findings intentionally excluded from list
+        },
       }),
       this.db.resumeCheckReport.count({ where: { userId } }),
     ])

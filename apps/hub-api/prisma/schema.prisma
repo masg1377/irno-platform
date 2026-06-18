@@ -1526,6 +1526,8 @@ model ResumeSection {
   @@index([resumeDocumentId])
   @@index([type])
   @@index([sortOrder])
+  // Compound index: fetch + sort sections for a resume in one scan
+  @@index([resumeDocumentId, sortOrder])
   @@map("resume_sections")
 }
 
@@ -1587,6 +1589,10 @@ model ResumeExport {
   @@index([userId])
   @@index([status])
   @@index([createdAt])
+  // Compound: list exports for a resume (listExports endpoint)
+  @@index([resumeDocumentId, status])
+  // Compound: list all user exports ordered by date (admin / portal views)
+  @@index([userId, createdAt])
   @@map("resume_exports")
 }
 
@@ -1627,6 +1633,8 @@ model ResumeCheckReport {
   @@index([resumeDocumentId])
   @@index([userId])
   @@index([createdAt])
+  // Compound: list user reports ordered by date (listReports endpoint)
+  @@index([userId, createdAt])
   @@map("resume_check_reports")
 }
 
@@ -1678,6 +1686,8 @@ model PortfolioProject {
   @@index([isFeatured])
   @@index([deletedAt])
   @@index([slug])
+  // Compound: public profile query — filter by profile + visibility + not-deleted
+  @@index([careerProfileId, visibility, deletedAt])
   @@map("portfolio_projects")
 }
 
@@ -1752,5 +1762,7 @@ model JobMatchReport {
   @@index([resumeDocumentId])
   @@index([sourceType])
   @@index([createdAt])
+  // Compound: list user job match reports ordered by date (listJobMatchReports endpoint)
+  @@index([careerProfileId, createdAt])
   @@map("job_match_reports")
 }

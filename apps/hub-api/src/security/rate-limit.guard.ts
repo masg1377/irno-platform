@@ -9,6 +9,7 @@ import {
 import { Reflector } from '@nestjs/core'
 import type { Request } from 'express'
 import { RedisService } from '../redis/redis.service.js'
+import { RedisKey } from '../redis/redis-keys.js'
 import { RATE_LIMIT_KEY, type RateLimitConfig } from './rate-limit.decorator.js'
 import { SecurityLogService } from './security-log.service.js'
 
@@ -51,7 +52,7 @@ export class RateLimitGuard implements CanActivate {
 
     // Resolve the rate-limit identifier
     const identifier = this.resolveIdentifier(request, config.keyBy)
-    const redisKey = `rl:${config.key}:${identifier}`
+    const redisKey = RedisKey.rateLimit(config.key, identifier)
 
     try {
       const count = await this.redis.incrWithTtl(redisKey, config.windowS)

@@ -13,11 +13,13 @@ import { ResumeCheckerService } from './resume-checker.service'
 import { CareerExportService } from './career-export.service'
 import { CareerPdfService } from './career-pdf.service'
 import { PrismaService } from '../prisma/prisma.service'
+import { RedisModule } from '../redis/redis.module'
 
 @Module({
   imports: [
     // Memory storage for uploaded resume files (not persisted to disk)
     MulterModule.register({ dest: undefined }), // memory storage via no dest
+    RedisModule,
   ],
   controllers: [
     CareerProfileController,

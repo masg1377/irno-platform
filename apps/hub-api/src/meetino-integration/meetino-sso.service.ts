@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { randomBytes } from 'node:crypto'
 import { RedisService } from '../redis/redis.service'
+import { RedisKey } from '../redis/redis-keys'
 import { PrismaService } from '../prisma/prisma.service'
 import { SecurityLogService } from '../security/security-log.service'
 
@@ -41,10 +42,6 @@ export interface IrnoIdentityClaims {
   issuedAt: string
   expiresAt: string
 }
-
-// ─── Redis key ────────────────────────────────────────────────────────────────
-
-const ssoKey = (code: string) => `irno:sso:code:${code}`
 
 // ─── Service ─────────────────────────────────────────────────────────────────
 
@@ -206,7 +203,7 @@ export class MeetinoSsoService {
     }
 
     const code = randomBytes(32).toString('base64url')
-    await this.redis.set(ssoKey(code), JSON.stringify(claims), ttl)
+    await this.redis.set(RedisKey.ssoCode(code), JSON.stringify(claims), ttl)
 
     this.logger.log(`SSO code generated — userId=${userId} ttl=${ttl}s`)
     return code
@@ -232,7 +229,7 @@ export class MeetinoSsoService {
       throw new UnauthorizedException('Invalid client secret')
     }
 
-    const raw = await this.redis.get(ssoKey(code))
+    const raw = await this.redis.get(RedisKey.ssoCode(code))
     if (!raw) {
       if (callerIp) {
         this.securityLog.ssoAbuse({ ip: callerIp, reason: 'sso_code_not_found_or_expired' })
@@ -241,7 +238,7 @@ export class MeetinoSsoService {
     }
 
     // Delete immediately — one-time use
-    await this.redis.del(ssoKey(code))
+    await this.redis.del(RedisKey.ssoCode(code))
 
     let claims: IrnoIdentityClaims
     try {

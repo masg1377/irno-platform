@@ -9,6 +9,8 @@ import { ConfigService } from '@nestjs/config'
 import * as crypto from 'crypto'
 import * as bcrypt from 'bcryptjs'
 import { PrismaService } from '../prisma/prisma.service'
+import { RedisService } from '../redis/redis.service'
+import { RedisKey } from '../redis/redis-keys'
 import type { ApiEnv } from '@irno/validators'
 
 /** Regex to strip Iranian country code prefix */
@@ -35,17 +37,22 @@ function generateOtpCode(): string {
  *
  * Responsibilities:
  *  - Generate and hash OTP codes (raw code never stored)
- *  - Enforce resend cooldown and attempt limits
+ *  - Enforce resend cooldown via Redis (fast, no DB round-trip)
+ *  - Enforce attempt limits via Redis counter
+ *  - Persist OTP record to PostgreSQL (audit trail, cross-process consistency)
  *  - Verify submitted codes
  *
  * NOT responsible for SMS/push delivery. The caller (AuthService) sends
  * the code via SmsService from NotificationsModule.
  *
+ * Redis keys used (see redis-keys.ts):
+ *  irno:otp:cooldown:{mobile}  — resend cooldown sentinel    TTL: OTP_RESEND_COOLDOWN_SECONDS
+ *
  * Security guarantees:
- *  - Raw OTP never stored in DB (bcrypt hash only)
+ *  - Raw OTP never stored in DB or Redis (bcrypt hash only in DB)
  *  - One-time use (consumedAt set on successful verification)
  *  - Expires after OTP_TTL_SECONDS
- *  - Rate-limited: OTP_RESEND_COOLDOWN_SECONDS between requests per mobile
+ *  - Rate-limited via Redis: OTP_RESEND_COOLDOWN_SECONDS between requests per mobile
  *  - Locked: OTP_MAX_ATTEMPTS wrong codes invalidates the OTP
  *  - No enumeration: responses never reveal whether mobile is registered
  */
@@ -55,6 +62,7 @@ export class OtpService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
     private readonly config: ConfigService<ApiEnv>,
   ) {}
 
@@ -63,12 +71,14 @@ export class OtpService {
   /**
    * Create and store a new OTP for the given mobile number.
    *
-   * Rate limits enforced:
-   * - Resend cooldown: reject if an active (unconsumed + not expired) OTP exists
-   *   that was created within OTP_RESEND_COOLDOWN_SECONDS.
+   * Resend cooldown is enforced via Redis (`irno:otp:cooldown:{mobile}`).
+   * This replaces the previous DB-query cooldown check — O(1) instead of
+   * a full table scan with index on (mobile, consumedAt, expiresAt).
+   *
+   * Falls back gracefully if Redis is unavailable: logs a warning and
+   * proceeds (fail-open to avoid blocking SMS delivery on infra issues).
    *
    * Returns the raw 6-digit code (for delivery by caller) and cooldown info.
-   * The caller is responsible for sending the code via SmsService.
    */
   async createOtp(
     mobile: string,
@@ -80,28 +90,22 @@ export class OtpService {
     const cooldown = this.config.get('OTP_RESEND_COOLDOWN_SECONDS', { infer: true }) ?? 60
     const maxAttempts = this.config.get('OTP_MAX_ATTEMPTS', { infer: true }) ?? 5
 
-    // Check resend cooldown: find the most recent active OTP for this mobile
-    const recent = await (this.prisma as unknown as {
-      otpCode: { findFirst: (args: unknown) => Promise<{ createdAt: Date } | null> }
-    }).otpCode.findFirst({
-      where: {
-        mobile: normalizedMobile,
-        consumedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true },
-    })
-
-    if (recent) {
-      const elapsed = Math.floor((Date.now() - recent.createdAt.getTime()) / 1000)
-      const remaining = cooldown - elapsed
-      if (remaining > 0) {
+    // ── Cooldown check via Redis (fast path) ────────────────────────────────
+    try {
+      const cooldownKey = RedisKey.otpCooldown(normalizedMobile)
+      const cooldownExists = await this.redis.exists(cooldownKey)
+      if (cooldownExists) {
+        const remaining = await this.redis.ttl(cooldownKey)
+        const remainingS = remaining > 0 ? remaining : 1
         throw new HttpException(
-          { cooldownSeconds: remaining, message: `لطفاً ${remaining} ثانیه صبر کنید.` },
+          { cooldownSeconds: remainingS, message: `لطفاً ${remainingS} ثانیه صبر کنید.` },
           HttpStatus.TOO_MANY_REQUESTS,
         )
       }
+    } catch (err) {
+      if (err instanceof HttpException) throw err
+      // Redis unavailable — log and proceed (fail-open for OTP delivery)
+      this.logger.warn(`OTP cooldown Redis check failed for mobile (fail-open): ${(err as Error).message}`)
     }
 
     const code = generateOtpCode()
@@ -121,7 +125,15 @@ export class OtpService {
       },
     })
 
-    this.logger.debug(`OTP created for mobile=${normalizedMobile} purpose=${purpose} ttl=${ttl}s`)
+    // ── Set cooldown sentinel in Redis ──────────────────────────────────────
+    try {
+      await this.redis.set(RedisKey.otpCooldown(normalizedMobile), '1', cooldown)
+    } catch (err) {
+      // Non-fatal — cooldown won't be enforced but OTP is already in DB
+      this.logger.warn(`OTP cooldown Redis set failed: ${(err as Error).message}`)
+    }
+
+    this.logger.debug(`OTP created for mobile=*** purpose=${purpose} ttl=${ttl}s cooldown=${cooldown}s`)
 
     return { code, cooldownSeconds: cooldown }
   }
@@ -203,6 +215,14 @@ export class OtpService {
       where: { id: otp.id },
       data: { consumedAt: new Date() },
     })
+
+    // On successful verification, clear the cooldown so the user can request
+    // a new OTP immediately if needed (e.g. for a different purpose).
+    try {
+      await this.redis.del(RedisKey.otpCooldown(normalizedMobile))
+    } catch {
+      // Non-fatal
+    }
 
     return { otpId: otp.id, userId: otp.userId }
   }

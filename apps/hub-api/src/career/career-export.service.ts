@@ -193,6 +193,16 @@ export class CareerExportService {
       where: { resumeDocumentId: resumeId, userId },
       orderBy: { createdAt: 'desc' },
       take: 20,
+      // Exclude htmlSnapshot — can be hundreds of KB per export; not needed for list view
+      select: {
+        id: true, resumeDocumentId: true, userId: true,
+        format: true, status: true, fileUrl: true,
+        errorMessage: true, createdAt: true, updatedAt: true,
+        templateId: true,
+        // watermarkConfig is small JSON — safe to include
+        watermarkConfig: true,
+        // NOTE: htmlSnapshot intentionally excluded from list
+      },
     })
     return exports.map((e: any) => this.mapExport(e))
   }

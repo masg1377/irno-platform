@@ -4,6 +4,8 @@ import {
   ConflictException,
 } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { RedisService } from '../redis/redis.service'
+import { RedisKey } from '../redis/redis-keys'
 import { TaxonomyTermType, TaxonomyTermStatus } from '@irno/types'
 import type { TaxonomyTermDto, PaginatedTaxonomyTerms } from '@irno/types'
 import type { CreateTaxonomyTermDto } from './dto/create-taxonomy-term.dto'
@@ -20,7 +22,17 @@ interface ListOptions {
 
 @Injectable()
 export class TaxonomyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
+
+  /** Invalidate the lookup cache for a taxonomy type after any write. */
+  private async invalidateTaxonomyCache(type: TaxonomyTermType): Promise<void> {
+    try {
+      await this.redis.del(RedisKey.cacheTaxonomy(type))
+    } catch { /* non-fatal — cache miss on next request is fine */ }
+  }
 
   private get db() {
     return this.prisma as any
@@ -117,6 +129,7 @@ export class TaxonomyService {
       },
     })
 
+    void this.invalidateTaxonomyCache(dto.type)
     return this.toDto(row, row.parent)
   }
 
@@ -152,6 +165,7 @@ export class TaxonomyService {
       },
     })
 
+    void this.invalidateTaxonomyCache(existing.type as TaxonomyTermType)
     return this.toDto(row, row.parent)
   }
 
@@ -191,6 +205,7 @@ export class TaxonomyService {
         },
       })
     }
+    void this.invalidateTaxonomyCache(existing.type as TaxonomyTermType)
   }
 
   // ─── Private helpers ───────────────────────────────────────────────────────

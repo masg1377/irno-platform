@@ -8,6 +8,8 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { RedisService } from '../redis/redis.service'
+import { RedisKey } from '../redis/redis-keys'
 import { computeKeywordMatch } from './resume-checker/keyword-match.js'
 import { ResumeCheckerService } from './resume-checker.service'
 import type { UpdateCareerProfileDto } from './dto/update-career-profile.dto'
@@ -37,6 +39,7 @@ export class CareerService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
     private readonly checkerService: ResumeCheckerService,
   ) {}
 
@@ -108,6 +111,11 @@ export class CareerService {
         _count: { select: { resumes: { where: { deletedAt: null } } } },
       },
     })
+    // Invalidate old slug and new slug (if changed)
+    await this.invalidatePublicProfileCache(profile.publicSlug)
+    if (dto.publicSlug && dto.publicSlug !== profile.publicSlug) {
+      await this.invalidatePublicProfileCache(dto.publicSlug)
+    }
     return this.mapCareerProfile(updated)
   }
 
@@ -140,6 +148,11 @@ export class CareerService {
           _count: { select: { resumes: { where: { deletedAt: null } } } },
         },
       })
+      // Invalidate public profile cache for old slug (before rename) and new slug
+      await this.invalidatePublicProfileCache(profile.publicSlug)
+      if (dto.publicSlug && dto.publicSlug !== profile.publicSlug) {
+        await this.invalidatePublicProfileCache(dto.publicSlug)
+      }
       return this.mapCareerProfile(updated)
     } catch (directErr: any) {
       // Fallback: Phase 19 fields (contactVisibilityConfig, seoTitle, etc.) may not be in the
@@ -515,6 +528,8 @@ export class CareerService {
         isVisible: dto.isVisible,
       },
     })
+    // Invalidate public profile cache — section content is rendered in the public resume
+    void this.invalidatePublicProfileCacheByUserId(userId)
     return this.mapSection(updated)
   }
 
@@ -527,6 +542,7 @@ export class CareerService {
     if (!section) throw new NotFoundException('بخش رزومه یافت نشد')
 
     await this.db.resumeSection.delete({ where: { id: sectionId } })
+    void this.invalidatePublicProfileCacheByUserId(userId)
     return { message: 'بخش حذف شد' }
   }
 
@@ -541,22 +557,57 @@ export class CareerService {
         }),
       ),
     )
+    void this.invalidatePublicProfileCacheByUserId(userId)
     return this.listSections(resumeId, userId)
   }
 
   // ── Templates ──────────────────────────────────────────────────────────────
 
   async listTemplates() {
+    // Cache resume templates for 15 minutes — they change only when admin edits a template.
+    // Invalidated by: updateTemplate / deleteTemplate (call invalidateTemplatesCache).
+    const cacheKey = RedisKey.cacheTemplates()
+    try {
+      const cached = await this.redis.get(cacheKey)
+      if (cached) return JSON.parse(cached)
+    } catch {
+      // Cache miss or Redis down — fall through to DB
+    }
+
     const templates = await this.db.resumeTemplate.findMany({
       where: { isActive: true, deletedAt: null },
       orderBy: { sortOrder: 'asc' },
     })
-    return templates.map(this.mapTemplate)
+    const result = templates.map(this.mapTemplate)
+
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(result), 15 * 60)
+    } catch {
+      // Non-fatal — return result without caching
+    }
+
+    return result
+  }
+
+  /** Invalidate the templates cache. Call after any template write. */
+  async invalidateTemplatesCache() {
+    try { await this.redis.del(RedisKey.cacheTemplates()) } catch { /* non-fatal */ }
   }
 
   // ── Public Resume ──────────────────────────────────────────────────────────
 
   async getPublicResume(slug: string) {
+    // Cache public profile for 60 seconds — reduces DB load on shared public links.
+    // Invalidated by: updatePublicSettings, updateProfile, createSection, updateSection,
+    // deleteSection, reorderSections, updateResumeWatermark (all call invalidatePublicProfileCache).
+    const cacheKey = RedisKey.cachePublicProfile(slug)
+    try {
+      const cached = await this.redis.get(cacheKey)
+      if (cached) return JSON.parse(cached)
+    } catch {
+      // Cache miss or Redis down — fall through to DB
+    }
+
     const profile = await this.db.careerProfile.findFirst({
       where: { publicSlug: slug },
     })
@@ -654,7 +705,7 @@ export class CareerService {
       }
     }
 
-    return {
+    const result = {
       slug: profile.publicSlug,
       displayName: profile.displayName,
       headline: profile.headline,
@@ -686,6 +737,33 @@ export class CareerService {
         templateType: c.template?.type ?? 'COMPLETION',
       })),
     }
+
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(result), 60)
+    } catch {
+      // Non-fatal — return result without caching
+    }
+
+    return result
+  }
+
+  /** Invalidate the public profile cache for a given slug. Call after any profile write. */
+  async invalidatePublicProfileCache(slug: string | null | undefined) {
+    if (!slug) return
+    try { await this.redis.del(RedisKey.cachePublicProfile(slug)) } catch { /* non-fatal */ }
+  }
+
+  /** Invalidate the public profile cache by userId (looks up slug from DB). */
+  private async invalidatePublicProfileCacheByUserId(userId: string) {
+    try {
+      const profile = await this.db.careerProfile.findUnique({
+        where: { userId },
+        select: { publicSlug: true },
+      })
+      if (profile?.publicSlug) {
+        await this.redis.del(RedisKey.cachePublicProfile(profile.publicSlug))
+      }
+    } catch { /* non-fatal */ }
   }
 
   // ── Portfolio ──────────────────────────────────────────────────────────────
@@ -1127,6 +1205,15 @@ export class CareerService {
           skip: (page - 1) * pageSize,
           take: pageSize,
           orderBy: { createdAt: 'desc' },
+          // Exclude jobDescriptionSnapshot — can be large text; not needed for list view
+          select: {
+            id: true, careerProfileId: true,
+            sourceType: true, sourceFileName: true, targetRole: true,
+            overallScore: true, keywordScore: true, roleMatchScore: true,
+            skillGap: true,
+            createdAt: true, updatedAt: true,
+            // NOTE: jobDescriptionSnapshot intentionally excluded from list
+          },
         }),
         this.db.jobMatchReport.count({ where }),
       ])
