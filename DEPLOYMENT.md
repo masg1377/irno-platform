@@ -89,22 +89,31 @@ Use this for: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `MEETINO_CLIENT_SECRET`
 
 ## 4. First Deployment
 
-Step-by-step commands for the initial production setup.
+Three deployment scripts are provided in `infra/scripts/`. They handle the full deployment lifecycle.
+
+| Script | Purpose |
+|--------|---------|
+| `migrate.sh` | Apply pending DB migrations (hub-api + meetino-api). Safe to run multiple times. |
+| `first-deploy.sh` | One-shot initial setup: validate secrets → migrate → seed → start all services. **Run once only.** |
+| `deploy.sh` | Routine redeployment: build images → migrate → rolling restart. **Never seeds.** |
+
+### Steps for the first deployment
 
 ```bash
 # 1. Clone the repository on the VPS
 git clone https://github.com/your-org/irno-platform.git /opt/irno
 cd /opt/irno
 
-# 2. Create production env files from templates
-cp apps/hub-api/.env.production.example apps/hub-api/.env
-cp apps/hub-web/.env.production.example apps/hub-web/.env.local
-cp apps/career-web/.env.production.example apps/career-web/.env.local
-# Fill in all values — especially SUPER_ADMIN_PASSWORD before seeding
+# 2. Create and fill the production compose env file
+cp infra/docker/.env.prod.example infra/docker/.env.prod
+# Edit infra/docker/.env.prod — fill in ALL values.
+# Generate secrets with:  openssl rand -hex 32
+# See Section 3 above for required values.
 
 # 3. Build Docker images
-# Note: NEXT_PUBLIC_* vars must be set in the shell or passed as build-args
-# because they are baked into the JS bundle at build time.
+# NEXT_PUBLIC_* vars are baked into the JS bundle at build time.
+# The deploy.sh script builds them with sensible defaults (hub.irno.ir etc.).
+# You can also build manually:
 docker build -f apps/hub-api/Dockerfile -t irno-hub-api:latest .
 docker build -f apps/hub-web/Dockerfile \
   --build-arg NEXT_PUBLIC_CAREER_WEB_URL=https://cv.irno.ir \
@@ -114,49 +123,27 @@ docker build -f apps/career-web/Dockerfile \
   --build-arg NEXT_PUBLIC_HUB_WEB_URL=https://hub.irno.ir \
   --build-arg NEXT_PUBLIC_CAREER_WEB_URL=https://cv.irno.ir \
   -t irno-career-web:latest .
-# Build meetino images similarly
+docker build -f apps/meetino-api/Dockerfile -t irno-meetino-api:latest .
+docker build -f apps/meetino-web/Dockerfile \
+  --build-arg NEXT_PUBLIC_HUB_WEB_URL=https://hub.irno.ir \
+  -t irno-meetino-web:latest .
 
-# 4. Start infrastructure only (postgres + redis)
-docker compose -f infra/docker/docker-compose.prod.yml up -d postgres redis
-# Wait for postgres to be healthy (usually 10-15 seconds)
-docker compose -f infra/docker/docker-compose.prod.yml ps
+# 4. Run the first-deploy script (validates secrets, migrates, seeds, starts all)
+./infra/scripts/first-deploy.sh
 
-# 5. Run database migrations
-# Hub (irno_hub database)
-docker run --rm --network irno_net \
-  --env-file apps/hub-api/.env \
-  irno-hub-api:latest \
-  sh -c "cd /app && npx prisma migrate deploy --schema=apps/hub-api/prisma/schema.prisma"
-
-# Meetino (meetino_db database)
-docker run --rm --network irno_net \
-  --env-file apps/meetino-api/.env \
-  irno-meetino-api:latest \
-  sh -c "npx prisma migrate deploy"
-
-# 6. Seed the first admin (run ONCE only — will error if run again)
-# Ensure SUPER_ADMIN_MOBILE, SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD are set
-docker run --rm --network irno_net \
-  --env-file apps/hub-api/.env \
-  irno-hub-api:latest \
-  sh -c "cd /app && pnpm --filter @irno/hub-api db:seed"
-
-# 7. Start all app containers
-docker compose -f infra/docker/docker-compose.prod.yml up -d
-
-# 8. Start nginx + certbot (HTTP only at this point — HTTPS blocks need certs first)
-docker compose -f infra/docker/docker-compose.prod.yml up -d nginx certbot
-
-# 9. Issue TLS certificates (DNS A records must be live before this step)
-docker compose -f infra/docker/docker-compose.prod.yml run --rm certbot \
-  certonly --webroot -w /var/www/certbot \
-  -d hub.irno.ir -d cv.irno.ir -d meet.irno.ir \
-  --email admin@irno.ir --agree-tos --non-interactive
+# 5. Issue TLS certificates (DNS A records must be live before this step)
+docker compose \
+  --env-file infra/docker/.env.prod \
+  -f infra/docker/docker-compose.prod.yml \
+  run --rm certbot \
+    certonly --webroot -w /var/www/certbot \
+    -d hub.irno.ir -d cv.irno.ir -d meet.irno.ir \
+    --email admin@irno.ir --agree-tos --non-interactive
 
 # Reload nginx to activate the HTTPS server blocks
 docker exec irno-nginx nginx -s reload
 
-# 10. Run health checks (see Section 10)
+# 6. Run health checks (see Section 10)
 ```
 
 Nginx site configs are in `infra/nginx/sites/` — one file per domain. To change a domain name, edit the relevant `sites/*.conf` and `nginx.conf` cert paths, then run `docker exec irno-nginx nginx -s reload`.
@@ -170,33 +157,25 @@ Automatic certificate renewal runs inside the certbot container every 12 hours. 
 
 ## 5. Routine Deployment
 
-Safe order for every subsequent deployment:
-
 ```bash
 cd /opt/irno
 
 # 1. Pull latest code
 git pull origin main
 
-# 2. Rebuild images with new code
-# (Same build commands as Step 3 in First Deployment)
+# 2. Build + migrate + restart in one step
+./infra/scripts/deploy.sh
 
-# 3. Run database migrations before restarting apps
-docker run --rm --network irno_net \
-  --env-file apps/hub-api/.env \
-  irno-hub-api:latest \
-  sh -c "cd /app && npx prisma migrate deploy --schema=apps/hub-api/prisma/schema.prisma"
-
-# 4. Restart app containers with new images
-docker compose -f infra/docker/docker-compose.prod.yml up -d \
-  hub-api hub-web career-web meetino-api meetino-web
-
-# 5. Run health checks (see Section 10)
-
-# 6. Verify login and PDF export work end-to-end
+# 3. Run health checks (see Section 10)
+# 4. Verify login and PDF export work end-to-end
 ```
 
-**Never restart app containers before migrations complete.**
+`deploy.sh` always runs `migrate.sh` before restarting containers. **Never restart app containers before migrations complete.**
+
+If you need to run only migrations (without restarting services), use:
+```bash
+./infra/scripts/migrate.sh
+```
 
 ---
 
