@@ -5,9 +5,7 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
 
-  // Disable type-checking and ESLint during production build.
-  // Fix the underlying TS errors before removing these.
-  typescript: { ignoreBuildErrors: true },
+  // Disable ESLint during production build (lint warnings tracked separately).
   eslint: { ignoreDuringBuilds: true },
 
   // Transpile the local shared package so its TypeScript is consumed directly.

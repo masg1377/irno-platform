@@ -98,42 +98,14 @@ jobs:
       - name: Typecheck meetino-api
         run: pnpm --filter @irno/meetino-api typecheck
 
-      # ┌──────────────────────────────────────────────────────────────────────┐
-      # │  meetino-web — KNOWN ISSUE (continue-on-error: true)                 │
-      # │                                                                      │
-      # │  Root cause:                                                         │
-      # │    zod@3.25.76 (resolved from ^3.23.4 in meetino-web/package.json)  │
-      # │    changed its internal type interface. @hookform/resolvers@3.9.0   │
-      # │    is not compatible with the new zod types. This produces 4 TS      │
-      # │    errors in:                                                        │
-      # │      - apps/meetino-web/src/app/auth/login/page.tsx                 │
-      # │      - apps/meetino-web/src/app/auth/register/page.tsx              │
-      # │      - apps/meetino-web/src/app/prejoin/[roomCode]/page.tsx         │
-      # │      - apps/meetino-web/src/components/CreateMeetingModal.tsx       │
-      # │                                                                      │
-      # │  Fix options (tracked in Phase 18.2 tech debt):                     │
-      # │    Option A: pin zod to "~3.23.4" in meetino-web/package.json       │
-      # │    Option B: upgrade @hookform/resolvers to >=3.10.0                │
-      # │                                                                      │
-      # │  Note: `next build` for meetino-web still PASSES because            │
-      # │    next.config.mjs sets typescript.ignoreBuildErrors = true.        │
-      # │    Only `tsc --noEmit` exits 1.                                     │
-      # │                                                                      │
-      # │  This step is deliberately allowed to fail so the rest of CI stays  │
-      # │  green. Fix before production launch (Phase 10 hardening).          │
-      # └──────────────────────────────────────────────────────────────────────┘
-      - name: "Typecheck meetino-web [⚠ known Zod/hookform issue — non-blocking]"
+      - name: Typecheck meetino-web
         run: pnpm --filter @irno/meetino-web typecheck
-        continue-on-error: true
 
       # ─────────────────────────────────────────────────────────────────────────
       # BUILD
       # ─────────────────────────────────────────────────────────────────────────
       # NestJS apps: `nest build` — produces dist/
       # Next.js apps: `next build` — produces .next/
-      #
-      # meetino-web build PASSES (typescript.ignoreBuildErrors = true in
-      # next.config.mjs), so no continue-on-error is needed here.
 
       - name: Build hub-api
         run: pnpm --filter @irno/hub-api build

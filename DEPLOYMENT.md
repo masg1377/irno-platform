@@ -309,8 +309,7 @@ The workflow at `.github/workflows/ci.yml` runs automatically on every push and 
 - Installs dependencies with `pnpm install --frozen-lockfile`
 - Builds all shared packages (required by app typechecks)
 - Generates Prisma clients for hub-api and meetino-api (no DB needed)
-- Typechecks hub-api, hub-web, career-web, and meetino-api (strict — any error fails the job)
-- Typechecks meetino-web with `continue-on-error: true` (known Zod/hookform incompatibility — Phase 18.2 tech debt; fix before launch)
+- Typechecks all five apps including meetino-web (strict — any error fails the job)
 - Builds all five apps
 
 No deploy, no secrets, no migrations run in CI.
