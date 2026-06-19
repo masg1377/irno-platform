@@ -282,9 +282,56 @@ Backups are retained for 30 days by default. Verify that backups include the PDF
 
 ---
 
-## 10. Health Checks
+## 10. Pre-Server Validation
+
+Run these checks **before you have a VPS** to verify that the repository is deployment-ready. They require no running services.
+
+### Static smoke test (CI-safe)
+
+```bash
+# From repo root — no Docker, no database, no internet needed
+CHECK_MODE=static ./infra/scripts/health-check.sh
+```
+
+What it verifies:
+- All required files exist (Dockerfiles, Compose, Prisma schemas, example env templates, CI workflow)
+- No real `.env` secrets are tracked by git
+- `API_CORS_ORIGINS` (plural) is used in example files — not the broken singular key
+- Deployment scripts are executable
+- Docker Compose file parses without errors (when `docker` is available)
+- Prisma schema syntax is valid (when `npx` is available)
+
+Exit 0 = ready to deploy. Exit 1 = fix the listed items first.
+
+### CI (GitHub Actions)
+
+The workflow at `.github/workflows/ci.yml` runs automatically on every push and pull request to `main`. It:
+- Installs dependencies with `pnpm install --frozen-lockfile`
+- Builds all shared packages (required by app typechecks)
+- Generates Prisma clients for hub-api and meetino-api (no DB needed)
+- Typechecks hub-api, hub-web, career-web, and meetino-api (strict — any error fails the job)
+- Typechecks meetino-web with `continue-on-error: true` (known Zod/hookform incompatibility — Phase 18.2 tech debt; fix before launch)
+- Builds all five apps
+
+No deploy, no secrets, no migrations run in CI.
+
+### Health Checks (post-deployment)
 
 Run after every deployment to verify all services are up:
+
+```bash
+# Default: checks production domains
+CHECK_MODE=live ./infra/scripts/health-check.sh
+
+# Override URLs for staging or custom domains
+CHECK_MODE=live \
+  HUB_URL=https://hub.irno.ir \
+  CAREER_URL=https://cv.irno.ir \
+  MEETINO_URL=https://meet.irno.ir \
+  ./infra/scripts/health-check.sh
+```
+
+Or curl individually:
 
 ```bash
 # hub-api health endpoint
@@ -310,8 +357,6 @@ curl -f -o /dev/null -w "%{http_code}" https://meet.irno.ir
 - [ ] PDF export reaches status `GENERATED`
 - [ ] Meetino loads at `https://meet.irno.ir`
 - [ ] A test meeting can be created and joined
-
-**Note:** A `health-check.sh` script is to be added in Phase 10.4.
 
 ---
 
