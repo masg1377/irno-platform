@@ -9,11 +9,20 @@ dist
 out
 build
 
-# Environment
+# Environment — local dev and per-app files
 .env
 .env.local
 .env.production
 .env.staging
+.env.prod
+.env.development
+.env.test
+
+# Production compose secrets file — NEVER commit
+infra/docker/.env.prod
+
+# Deployment state (guard files written by first-deploy.sh)
+infra/.state/
 
 # Prisma
 prisma/migrations/*.db

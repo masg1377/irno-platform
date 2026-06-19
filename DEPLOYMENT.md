@@ -65,17 +65,35 @@ VPS (Ubuntu 22.04 LTS, minimum 4 vCPU / 8 GB RAM)
 
 ## 3. Environment Files
 
-Real `.env` files are not committed to the repository. Templates are provided:
+**⚠️ Security rule: Never commit real `.env` files.** The `.gitignore` excludes them, but git tracks files that were committed before the rule was added. If you ever see a `.env` file appearing in `git status`, remove it with `git rm --cached <file>` before committing.
+
+### Production compose env (primary)
+
+The production Docker Compose stack reads **one file** for all shared secrets:
+
+```
+infra/docker/.env.prod          ← real production file, never commit
+infra/docker/.env.prod.example  ← template, safe to commit
+```
+
+```bash
+# Create on VPS — fill every GENERATE_WITH__ value before running first-deploy.sh
+cp infra/docker/.env.prod.example infra/docker/.env.prod
+```
+
+`infra/docker/.env.prod` is listed in `.gitignore`. If it somehow appears in `git status`, run `git rm --cached infra/docker/.env.prod` immediately.
+
+### Per-app env templates (reference)
 
 | App | Template |
 |-----|----------|
 | hub-api | `apps/hub-api/.env.production.example` |
 | hub-web | `apps/hub-web/.env.production.example` |
 | career-web | `apps/career-web/.env.production.example` |
-| meetino-api | `apps/meetino-api/.env.example` (check for production notes) |
+| meetino-api | `apps/meetino-api/.env.production.example` |
 | meetino-web | `apps/meetino-web/.env.example` |
 
-Copy each template to the corresponding `.env` or `.env.local` file and fill in every value.
+In the Docker Compose production setup, per-app env vars are injected by `docker-compose.prod.yml` from `infra/docker/.env.prod`. The per-app `.env` files are only needed for standalone runs outside of Compose.
 
 **Secret generation:**
 ```bash
@@ -83,7 +101,7 @@ openssl rand -hex 32
 ```
 Use this for: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `MEETINO_CLIENT_SECRET`, database passwords, Redis password, and `SUPER_ADMIN_PASSWORD`.
 
-**⚠️ Critical:** The correct hub-api CORS key is `API_CORS_ORIGINS` (plural, comma-separated). An older example file contains `API_CORS_ORIGIN` (singular) — that key is wrong and will silently break all cross-origin requests.
+**⚠️ Critical:** The correct hub-api CORS key is `API_CORS_ORIGINS` (plural, comma-separated). Any file containing `API_CORS_ORIGIN` (singular) is wrong — that key is silently ignored and will break all cross-origin requests.
 
 ---
 

@@ -1,0 +1,73 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Irno Platform — Docker build context exclusions (monorepo root)
+#
+# Applied to all app builds:
+#   docker build -f apps/<app>/Dockerfile .
+#
+# Goal: reduce context size + prevent secrets from reaching the Docker daemon.
+# All Dockerfiles use COPY . . — this file is therefore critical for security.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Git metadata ──────────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+
+# ── Local dependencies (rebuilt inside Docker) ───────────────────────────────
+node_modules
+**/node_modules
+.pnpm-store
+
+# ── Build outputs (stale local builds must never enter Docker context) ────────
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+build
+**/build
+
+# ── Turbo / cache ─────────────────────────────────────────────────────────────
+.turbo
+**/.turbo
+
+# ── TypeScript build info ─────────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ── Secrets — most important ──────────────────────────────────────────────────
+# Real env files must never reach the Docker daemon, even transiently.
+# Example files (.env.example, .env.*.example) are documentation only
+# and are not needed inside images.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# ── Infra / deployment (not needed for building app images) ──────────────────
+infra/
+
+# ── Runtime data ─────────────────────────────────────────────────────────────
+apps/hub-api/storage/
+uploads/
+tmp/
+logs/
+
+# ── Test / CI ─────────────────────────────────────────────────────────────────
+coverage
+.nyc_output
+
+# ── Editor ────────────────────────────────────────────────────────────────────
+.vscode
+.idea
+*.swp
+*.swo
+
+# ── Logs / debug ─────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
