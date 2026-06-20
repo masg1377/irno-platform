@@ -44,8 +44,13 @@ RUN pnpm --filter @irno/types build
 RUN pnpm --filter @irno/validators build
 RUN pnpm --filter @irno/config build
 
-# Generate Prisma client inside the image (alpine-matched binary)
-RUN pnpm --filter @irno/hub-api db:generate
+# Generate Prisma client inside the image (alpine-matched binary).
+# DATABASE_URL must be syntactically valid for Prisma to initialise its
+# config reader, but the value is never used — schema introspection is
+# skipped during generate.  The real URL is injected at container runtime
+# by Docker Compose and never baked into any image layer.
+RUN DATABASE_URL='postgresql://placeholder:placeholder@localhost:5432/placeholder?schema=public' \
+    pnpm --filter @irno/hub-api db:generate
 
 # Compile NestJS app
 RUN pnpm --filter @irno/hub-api build

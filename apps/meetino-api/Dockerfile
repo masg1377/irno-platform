@@ -42,8 +42,13 @@ COPY . .
 # Build @irno/meetino-shared (Meetino-specific types/enums)
 RUN pnpm --filter @irno/meetino-shared build
 
-# Generate Prisma client inside the image (alpine binary match)
-RUN pnpm --filter @irno/meetino-api exec prisma generate --schema=src/prisma/schema.prisma
+# Generate Prisma client inside the image (alpine binary match).
+# DATABASE_URL must be syntactically valid for Prisma to initialise its
+# config reader, but the value is never used — schema introspection is
+# skipped during generate.  The real URL is injected at container runtime
+# by Docker Compose and never baked into any image layer.
+RUN DATABASE_URL='postgresql://placeholder:placeholder@localhost:5432/placeholder?schema=public' \
+    pnpm --filter @irno/meetino-api exec prisma generate --schema=src/prisma/schema.prisma
 
 # Compile the API
 RUN pnpm --filter @irno/meetino-api build
