@@ -1,21 +1,16 @@
-port: 7880
-log_level: info
-bind_addresses:
-  - ""
-
-rtc:
-  port_range_start: 50000
-  port_range_end: 60000
-  use_external_ip: false
-  node_ip: "188.121.117.190"
-  stun_servers: []
-
-turn:
-  enabled: false
-
-logging:
-  level: info
-  json: false
-
-keys:
-  APImeetino: 12e337d9a9a0f7b62dfb7abdb1d0029c28f75c7ccc448f5363683c020e974425
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTICE: This file is a placeholder in the repository.
+#
+# The real LiveKit production config lives OUTSIDE the repository:
+#   /opt/irno/secrets/livekit.prod.yaml   (chmod 0600, owned by root)
+#
+# This tracked copy contains NO real credentials and is NOT used at runtime.
+# The production Docker Compose mounts /opt/irno/secrets/livekit.prod.yaml
+# directly into the livekit container.
+#
+# To create the server config:
+#   ./infra/scripts/first-deploy.sh   (generates it automatically)
+#
+# Or manually create /opt/irno/secrets/livekit.prod.yaml from the template:
+#   infra/docker/livekit/livekit.prod.yaml.example
+# ─────────────────────────────────────────────────────────────────────────────

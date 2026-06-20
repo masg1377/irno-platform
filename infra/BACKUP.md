@@ -129,7 +129,7 @@ Run this after every restore to confirm data integrity:
 
 - [ ] `GET /api/v1/health/ready` returns `200` for hub-api
 - [ ] `GET /api/v1/health/ready` returns `200` for meetino-api  
-- [ ] Admin login works (`admin@irno.ir`)
+- [ ] Admin login works (`admin@irnocollege.com`)
 - [ ] Student list loads in Hub
 - [ ] Course list loads in Hub
 - [ ] At least one PDF export is downloadable from Career Studio

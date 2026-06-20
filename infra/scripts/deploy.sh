@@ -26,7 +26,7 @@
 # NEXT_PUBLIC_* build args:
 #   Next.js bakes NEXT_PUBLIC_* vars into the JS bundle at build time.
 #   Override the defaults below by setting them in your shell before running:
-#     export NEXT_PUBLIC_HUB_WEB_URL=https://hub.example.com
+#     export NEXT_PUBLIC_HUB_WEB_URL=https://platform.irnocollege.com
 #     ./infra/scripts/deploy.sh
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -45,12 +45,14 @@ die()  { echo "[ERROR] $*" >&2; exit 1; }
 warn() { echo "[WARN]  $*" >&2; }
 
 # ── Production domain defaults (NEXT_PUBLIC_* are baked at build time) ───────
-# Override any of these in your shell before calling this script if your
-# domains differ from the defaults.
-HUB_WEB_URL="${NEXT_PUBLIC_HUB_WEB_URL:-https://hub.irno.ir}"
-CAREER_WEB_URL="${NEXT_PUBLIC_CAREER_WEB_URL:-https://cv.irno.ir}"
-MEETINO_WEB_URL="${NEXT_PUBLIC_MEETINO_WEB_URL:-https://meet.irno.ir}"
+# Override any of these in your shell before calling this script.
+HUB_WEB_URL="${NEXT_PUBLIC_HUB_WEB_URL:-https://platform.irnocollege.com}"
+CAREER_WEB_URL="${NEXT_PUBLIC_CAREER_WEB_URL:-https://cv.irnocollege.com}"
+MEETINO_WEB_URL="${NEXT_PUBLIC_MEETINO_WEB_URL:-https://meet.irnocollege.com}"
 MEETINO_CALLBACK_URL="${MEETINO_WEB_URL}/auth/irno/callback"
+# LiveKit WebSocket URL — used by meetino-web browser client (baked at build time).
+# Must NOT be the Meetino web domain — it is the dedicated LiveKit WebSocket endpoint.
+LIVEKIT_WS_URL="${NEXT_PUBLIC_LIVEKIT_WS_URL:-wss://livekit.irnocollege.com}"
 
 # ── Pre-flight ───────────────────────────────────────────────────────────────
 command -v docker >/dev/null || die "docker not found."
@@ -61,15 +63,16 @@ command -v docker >/dev/null || die "docker not found."
 
 log "================================================================="
 log "  Irno Platform — Routine Deploy"
-log "  Hub URL:    ${HUB_WEB_URL}"
-log "  Career URL: ${CAREER_WEB_URL}"
-log "  Meetino URL:${MEETINO_WEB_URL}"
+log "  Hub URL:     ${HUB_WEB_URL}"
+log "  Career URL:  ${CAREER_WEB_URL}"
+log "  Meetino URL: ${MEETINO_WEB_URL}"
+log "  LiveKit WS:  ${LIVEKIT_WS_URL}"
 log "================================================================="
 
 # ── Step 1: Build Docker images ──────────────────────────────────────────────
 #
 # NEXT_PUBLIC_* vars must be passed as --build-arg because Next.js embeds them
-# in the JavaScript bundle at build time. Runtime env vars have no effect on them.
+# in the JavaScript bundle at build time. Runtime env vars have no effect.
 #
 log ""
 log "Step 1/3: Building Docker images..."
@@ -107,7 +110,7 @@ log "  Building irno-meetino-web:latest..."
 docker build \
   -f "${REPO_ROOT}/apps/meetino-web/Dockerfile" \
   --build-arg "NEXT_PUBLIC_HUB_WEB_URL=${HUB_WEB_URL}" \
-  --build-arg "NEXT_PUBLIC_LIVEKIT_URL=${MEETINO_WEB_URL}" \
+  --build-arg "NEXT_PUBLIC_LIVEKIT_URL=${LIVEKIT_WS_URL}" \
   -t irno-meetino-web:latest \
   "${REPO_ROOT}"
 
@@ -126,7 +129,10 @@ log "Step 2/3: Running database migrations..."
 #
 # docker compose up -d with new images replaces running containers.
 # Services restart in depends_on order (postgres/redis are already healthy).
-# nginx and livekit are included so config changes take effect.
+# livekit is included so config changes take effect.
+#
+# ⚠️  nginx is NOT in this list — TLS is handled by host Nginx, not Docker.
+#     To reload host Nginx after config changes: sudo nginx -s reload
 #
 log ""
 log "Step 3/3: Restarting application containers..."
@@ -136,7 +142,6 @@ ${COMPOSE} up -d \
   career-web \
   meetino-api \
   meetino-web \
-  nginx \
   livekit
 log "  ✓ Containers restarted"
 

@@ -14,10 +14,10 @@
 #     Requires running services at the configured URLs. Use after deployment.
 #
 # URL defaults (override with env vars for staging/custom domains):
-#   HUB_URL     https://hub.irno.ir
-#   CAREER_URL  https://cv.irno.ir
-#   MEETINO_URL https://meet.irno.ir
-#   API_URL     https://hub.irno.ir   (hub-api is reverse-proxied under hub)
+#   HUB_URL     https://platform.irnocollege.com
+#   CAREER_URL  https://cv.irnocollege.com
+#   MEETINO_URL https://meet.irnocollege.com
+#   API_URL     https://platform.irnocollege.com   (hub-api is reverse-proxied under platform)
 #
 # Exit codes:
 #   0 — all checks passed
@@ -26,7 +26,7 @@
 # Usage:
 #   ./infra/scripts/health-check.sh                        # static mode
 #   CHECK_MODE=live ./infra/scripts/health-check.sh        # live mode
-#   CHECK_MODE=live HUB_URL=https://staging.irno.ir \
+#   CHECK_MODE=live HUB_URL=https://staging.irnocollege.com \
 #     ./infra/scripts/health-check.sh                      # custom URL
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -53,9 +53,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # ── Mode and URL config ───────────────────────────────────────────────────────
 CHECK_MODE="${CHECK_MODE:-static}"
-HUB_URL="${HUB_URL:-https://hub.irno.ir}"
-CAREER_URL="${CAREER_URL:-https://cv.irno.ir}"
-MEETINO_URL="${MEETINO_URL:-https://meet.irno.ir}"
+HUB_URL="${HUB_URL:-https://platform.irnocollege.com}"
+CAREER_URL="${CAREER_URL:-https://cv.irnocollege.com}"
+MEETINO_URL="${MEETINO_URL:-https://meet.irnocollege.com}"
 API_URL="${API_URL:-${HUB_URL}}"
 
 echo -e "\n${BOLD}Irno Platform — Health Check${NC}"
@@ -86,7 +86,10 @@ REQUIRED_FILES=(
   "apps/hub-api/prisma.config.ts"
   "apps/meetino-api/src/prisma/schema.prisma"
   "infra/docker/docker-compose.yml"
-  "infra/nginx/nginx.conf"
+  "infra/host-nginx/sites/platform.irnocollege.com.conf"
+  "infra/host-nginx/sites/cv.irnocollege.com.conf"
+  "infra/host-nginx/sites/meet.irnocollege.com.conf"
+  "infra/host-nginx/sites/livekit.irnocollege.com.conf"
   "infra/scripts/first-deploy.sh"
   "infra/scripts/deploy.sh"
   "infra/scripts/migrate.sh"
